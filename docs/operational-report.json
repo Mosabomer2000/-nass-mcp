@@ -1,0 +1,44 @@
+{
+  "date_utc": "2026-10-20T06:28:00.189901+00:00",
+  "project": "nass-mcp",
+  "version": "0.2.1",
+  "dependency_presence": {
+    "mcp": false,
+    "yt_dlp": false,
+    "youtube_transcript_api": false,
+    "pytubefix": false,
+    "faster_whisper": false,
+    "ffmpeg": true,
+    "ffprobe": true,
+    "node": true,
+    "deno": false,
+    "whisper-cli": false,
+    "yt-transcript": false,
+    "youtubedr": false
+  },
+  "tests": {
+    "offline_regression_and_process_integration": {
+      "ok": true,
+      "returncode": 0,
+      "stdout_tail": ".......................................                                  [100%]\n39 passed in 2.90s\n",
+      "stderr_tail": ""
+    },
+    "sdk_server_import": {
+      "state": "BLOCKED",
+      "reason": "mcp Python SDK not installed"
+    },
+    "youtube_dns": {
+      "state": "BLOCKED",
+      "reason": "gaierror"
+    },
+    "live_captions": {
+      "state": "BLOCKED",
+      "reason": "DNS inaccessible or essential extractors not installed"
+    },
+    "live_audio": {
+      "state": "BLOCKED",
+      "reason": "DNS inaccessible or essential extractors not installed"
+    }
+  },
+  "overall": "INCOMPLETE_OR_FAILED"
+}

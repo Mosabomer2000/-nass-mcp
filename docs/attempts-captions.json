@@ -1,0 +1,24 @@
+{
+  "ok": false,
+  "error": "No accessible captions",
+  "attempts": [
+    {
+      "stage": "captions",
+      "provider": "youtube-transcript-api",
+      "ok": false,
+      "message": "ModuleNotFoundError: No module named 'youtube_transcript_api'"
+    },
+    {
+      "stage": "captions",
+      "provider": "yt-dlp-captions",
+      "ok": false,
+      "message": "ModuleNotFoundError: No module named 'yt_dlp'"
+    },
+    {
+      "stage": "captions",
+      "provider": "yt-transcript-go",
+      "ok": false,
+      "message": "RuntimeError: Optional yt-transcript Go command is not installed"
+    }
+  ]
+}

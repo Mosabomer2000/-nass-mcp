@@ -1,0 +1,12 @@
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.whl
+build/
+dist/
+*.egg-info/
+.nass/
+node_modules/
+tests/
+remote-netlify/

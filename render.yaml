@@ -1,0 +1,28 @@
+# Free preview backend. Some free-plan bandwidth/build overages can be billable.
+# Set a spend cap in Render if a payment method is linked. A running free
+# instance is NOT permanent storage, and background ASR may be interrupted.
+services:
+  - type: web
+    name: nass-audio-worker
+    runtime: docker
+    plan: free
+    autoDeployTrigger: off
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      - key: NASS_BACKEND_TOKEN
+        sync: false
+      - key: NASS_WHISPER_MODEL
+        value: tiny
+      - key: NASS_DEVICE
+        value: cpu
+      - key: NASS_COMPUTE_TYPE
+        value: int8
+      - key: NASS_BEAM_SIZE
+        value: '1'
+      - key: NASS_JOB_QUEUE_LIMIT
+        value: '1'
+      - key: NASS_MAX_DURATION_SEC
+        value: '1200'
+      - key: NASS_DATA_DIR
+        value: /tmp/nass-data

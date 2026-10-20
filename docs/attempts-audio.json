@@ -1,0 +1,37 @@
+{
+  "ok": false,
+  "error": "RuntimeError: All real-audio extraction methods failed; see attempts",
+  "video_id": "QxC5E44QoZY",
+  "attempts": [
+    {
+      "stage": "audio",
+      "provider": "yt-dlp/default",
+      "ok": false,
+      "message": "ModuleNotFoundError: No module named 'yt_dlp'"
+    },
+    {
+      "stage": "audio",
+      "provider": "yt-dlp/ios",
+      "ok": false,
+      "message": "ModuleNotFoundError: No module named 'yt_dlp'"
+    },
+    {
+      "stage": "audio",
+      "provider": "pytubefix",
+      "ok": false,
+      "message": "ModuleNotFoundError: No module named 'pytubefix'"
+    },
+    {
+      "stage": "audio",
+      "provider": "youtubejs",
+      "ok": false,
+      "message": "CalledProcessError: provider exited with code 1"
+    },
+    {
+      "stage": "audio",
+      "provider": "youtubedr",
+      "ok": false,
+      "message": "RuntimeError: Optional youtubedr command is not installed"
+    }
+  ]
+}

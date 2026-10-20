@@ -1,0 +1,7 @@
+{
+  "name": "nass-mcp-youtubejs-adapter",
+  "private": true,
+  "type": "module",
+  "description": "Optional independent audio extraction, never automatically uploads audio",
+  "dependencies": {"youtubei.js": ">=17 <20"}
+}
