@@ -82,7 +82,7 @@ def test_audio_three_fallbacks(tmp_path, monkeypatch):
     monkeypatch.setattr(e, "check_audio", lambda *args: 15.0)
     audio, method = e.acquire_audio(ID, tmp_path, fails)
     assert audio == ok and method == "pytubefix"
-    assert [x["ok"] for x in fails] == [False, False, True]
+    assert [x["ok"] for x in fails] == [False, False, False, True]
 
 
 def test_asr_fallback(tmp_path, monkeypatch):

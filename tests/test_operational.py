@@ -126,7 +126,7 @@ def test_actual_node_audio_stream_adapter_with_local_transport(tmp_path, monkeyp
     assert eng.check_audio(output)>1
     # Enforce stream limiter: verify partial output gets deleted rather than cached.
     monkeypatch.setattr(core, 'MAX_AUDIO_BYTES', 2048)
-    with pytest.raises(subprocess.CalledProcessError):
+    with pytest.raises(RuntimeError, match="exceeds configured maximum"):
         eng.youtubejs_audio(VIDEO_ID, tmp_path/'too_small')
     assert not (tmp_path/'too_small'/'audio.m4a').exists()
 

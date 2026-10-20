@@ -88,7 +88,7 @@ def test_all_other_audio_fail_niche_go_works(tmp_path, monkeypatch):
     path, source = e.acquire_audio(VID, tmp_path / "work", ledger)
     assert source == "youtubedr"
     assert path == fake
-    assert [entry["ok"] for entry in ledger] == [False, False, False, False, True]
+    assert [entry["ok"] for entry in ledger] == [False, False, False, False, False, True]
 
 
 def test_captions_2_fail_go_saves(tmp_path, monkeypatch):

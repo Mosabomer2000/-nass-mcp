@@ -302,8 +302,24 @@ class Engine:
         target.mkdir(parents=True, exist_ok=True)
         out = target / "audio.m4a"
         out.unlink(missing_ok=True)
-        subprocess.run([node, str(script), get_video_id(video_id), str(out), str(MAX_AUDIO_BYTES)],
-                       check=True, capture_output=True, timeout=PROVIDER_TIMEOUT)
+        try:
+            subprocess.run([node, str(script), get_video_id(video_id), str(out), str(MAX_AUDIO_BYTES)],
+                           check=True, capture_output=True, timeout=PROVIDER_TIMEOUT)
+        except subprocess.CalledProcessError as exc:
+            # Do not echo stderr: it can contain signed media URLs or other secrets.
+            # Categorize only known failure messages for safe, actionable reports.
+            stderr = (exc.stderr or b"").decode("utf-8", errors="replace")
+            if "ERR_MODULE_NOT_FOUND" in stderr or "Cannot find package" in stderr:
+                reason = "YouTube.js dependency missing inside installed Python package"
+            elif "403" in stderr or "Forbidden" in stderr:
+                reason = "YouTube.js request was refused (HTTP 403)"
+            elif "bot" in stderr.lower() or "sign in" in stderr.lower():
+                reason = "YouTube refused unauthenticated extraction"
+            elif "Audio stream exceeds size limit" in stderr:
+                reason = "YouTube.js audio exceeds configured maximum"
+            else:
+                reason = f"YouTube.js subprocess failed with code {exc.returncode}"
+            raise RuntimeError(reason) from exc
         return out
 
     def youtubedr_audio(self, video_id: str, target: Path) -> Path:
@@ -357,6 +373,9 @@ class Engine:
         methods: list[tuple[str, Callable[[], Path]]] = [
             ("yt-dlp/default", lambda: self.ytdlp_audio(video_id, work / "ytdlp_default", "default")),
             ("yt-dlp/ios", lambda: self.ytdlp_audio(video_id, work / "ytdlp_ios", "ios")),
+            # Official yt-dlp guidance: some embeddable videos support this client
+            # without a GVS PO token; this cannot fix a blocked datacenter IP.
+            ("yt-dlp/web_embedded", lambda: self.ytdlp_audio(video_id, work / "ytdlp_embedded", "web_embedded")),
             ("pytubefix", lambda: self.pytubefix_audio(video_id, work / "pytubefix")),
             ("youtubejs", lambda: self.youtubejs_audio(video_id, work / "youtubejs")),
             ("youtubedr", lambda: self.youtubedr_audio(video_id, work / "youtubedr")),
@@ -593,7 +612,8 @@ class Engine:
 
 
 def health() -> dict:
-    return {"name": "Nass MCP", "version": "0.2.1", "time": utc_now(),
+    from nass_mcp import __version__
+    return {"name": "Nass MCP", "version": __version__, "time": utc_now(),
             "components": {
                 **{x: importlib.util.find_spec(x) is not None for x in
                    ("youtube_transcript_api", "yt_dlp", "pytubefix", "faster_whisper", "requests", "mcp")},

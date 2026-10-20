@@ -27,7 +27,10 @@ COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 RUN python -m pip install --disable-pip-version-check \
         '.[captions,audio,asr,remote]' \
-    && npm install --prefix /app/src/nass_mcp/_node --omit=dev --no-audit --no-fund \
+    && NODE_DIR="$(python -c 'from pathlib import Path; import nass_mcp; print(Path(nass_mcp.__file__).resolve().parent / "_node")')" \
+    && test -f "$NODE_DIR/youtubejs_audio.mjs" \
+    && npm install --prefix "$NODE_DIR" --omit=dev --no-audit --no-fund \
+    && test -d "$NODE_DIR/node_modules/youtubei.js" \
     && node --version && python -c 'from importlib.util import find_spec; assert find_spec("mcp")'
 # Pre-created scratch area. Free Render disk and weights are ephemeral.
 RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin nass \
