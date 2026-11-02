@@ -77,6 +77,14 @@ def test_clip_export_is_private_and_contains_no_transcript(tmp_path):
     parsed = json.loads(index)
     assert parsed["machine_transcript_included"] is False
     assert parsed["reference_transcript_included"] is False
+    private_page = output / "review.html"
+    assert private_page.is_file()
+    html = private_page.read_text("utf-8")
+    assert "clip_0001.wav" in html and "clip_0002.wav" in html
+    assert "هذا النص سري" not in html
+    assert "هذه كلمات خاصة" not in html
+    assert "connect-src 'none'" in html
+    assert report["review_page"] == str(private_page.resolve())
     with pytest.raises(FileExistsError):
         export_review_clips(audio, asr_result(), manifest, output)
 
