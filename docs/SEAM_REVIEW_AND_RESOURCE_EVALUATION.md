@@ -78,12 +78,29 @@ diagnostic sample, **not** evidence of general model accuracy.
 
 Evidence: https://github.com/Mosabomer2000/-nass-mcp/actions/runs/41507510389
 
-A broader 40-clip, deterministic distributed-index evaluation has its
-own workflow `.github/workflows/nahw-asr.yml`. Source audio is
-downloaded only for testing; neither source bytes nor reference text is
-uploaded to public artifacts. Report its actual result from CI, not a
-predicted value. Publisher review does not equal independent Nass
-re-auditing of every utterance.
+A broader **40-clip deterministic distributed-index evaluation** completed
+successfully on `faster-whisper/small` CPU/int8 (beam 3). It included
+**150 publisher-reviewed reference words across 40 recordings and seven
+speaker groups**:
+
+| NahwAI subset | Clips | Reference words | Micro-WER | Micro-CER |
+|---|---:|---:|---:|---:|
+| Initial fixed rows | 10 | 42 | 26.19% | 7.98% |
+| Distributed-index evaluation | 40 | 150 | **26.00%** | **6.737%** |
+
+The runs used **different** index selections, not a nested sample, so
+their metrics should not be treated as paired improvement or regression.
+Although the dataset publisher reports human annotator approval,
+Nass has not independently audited every recording. The set remains
+far too small and too reading-oriented to establish reliable
+performance on real scholarly lectures, dialects, or multi-hour speech.
+
+The 40-clip workflow is `.github/workflows/nahw-asr.yml`.
+Source audio is downloaded only for testing; neither audio bytes nor
+reference text is uploaded to public artifacts.
+
+Evidence:
+https://github.com/Mosabomer2000/-nass-mcp/actions/runs/41507940904
 
 ## 4. Remaining limitations and production gate
 
