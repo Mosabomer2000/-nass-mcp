@@ -43,3 +43,9 @@ control positions are derived from the audio digest, not from model accuracy.
 If the recording is too short or seam intervals dominate, fewer controls may
 be available. Compare seam and interior excerpt WER separately; do not infer
 full-recording accuracy from either sample alone.
+
+The local report now includes separate `metrics_by_review_kind` aggregates for
+`decoder_seam`, `interior_control` and custom excerpts. Only attested,
+fully contained, non-overlapping reviewed intervals can contribute to these
+statistics. Null values mean no qualifying reviewed reference exists; they
+are never treated as 0% word error.
