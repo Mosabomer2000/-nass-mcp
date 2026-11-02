@@ -12,7 +12,7 @@ def result():
             "recognition": {"backend": "faster-whisper", "model": "small",
                             "configured_chunk_seconds": 20,
                             "configured_overlap_seconds": 4,
-                            "duration_seconds": 42},
+                            "duration_seconds": 42, "audio_sha256": DIGEST},
             "segments": [{"start": 12, "end": 18, "text": "العلم النافع"},
                          {"start": 18, "end": 23, "text": "العمل الصالح"},
                          {"start": 32, "end": 38, "text": "الصدق"}]}
@@ -150,3 +150,21 @@ def test_control_interval_containing_real_seam_is_not_scored():
     out = evaluate_reviews(result(), [row], DIGEST)
     assert out["scored_rows"] == 0
     assert out["excluded_rows"][0]["reason"] == "control_contains_decoder_seam"
+
+
+def test_legacy_result_cannot_claim_audio_verification():
+    item = result()
+    del item["recognition"]["audio_sha256"]
+    with pytest.raises(ValueError, match="re-transcribe"):
+        review_template(item, DIGEST)
+    with pytest.raises(ValueError, match="re-transcribe"):
+        evaluate_reviews(item, [], DIGEST)
+
+
+def test_wrong_source_audio_is_rejected_even_with_self_attestation():
+    item = result()
+    item["recognition"]["audio_sha256"] = "b" * 64
+    with pytest.raises(ValueError, match="mismatch"):
+        review_template(item, DIGEST)
+    with pytest.raises(ValueError, match="mismatch"):
+        evaluate_reviews(item, [], DIGEST)
