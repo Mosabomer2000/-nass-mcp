@@ -114,3 +114,28 @@ exports certify that listening actually occurred**; attestation relies on
 reviewer honesty. All WAV clips and generated JSONL are confidential unless
 the source licence and recorded speakers' rights permit sharing. Do not open
 this private review folder from a remotely synchronized or shared drive.
+
+
+## Resume without losing a long review session
+
+The offline page has an **استئناف المراجعة من ملف JSONL محفوظ** file chooser.
+To resume, reopen the original local \`review.html\`, choose the last
+\`nass-reviewed.jsonl\` export, and continue correcting the restored entries.
+The importer accepts only a manifest whose SHA-256, exact sample IDs,
+sample kinds, source intervals, and row count match the loaded review
+session. It rejects duplicate IDs, malformed states and unpaired
+attestation flags; on error it leaves all current edits untouched.
+A file from another recording **cannot** be imported into this session.
+
+No browser cloud storage, network call, automatic saving, or uploading is
+used. This is intentionally **explicit checkpointing**: export JSONL
+regularly and keep it safe. The page warns before navigation with unsaved
+changes; after a download is initiated, confirm the file was really saved.
+The import status message indicates whether restoration succeeded.
+
+A separate real-browser acceptance runs in CI using a synthetic tone WAV:
+it checks the local sibling WAV player, download JSONL, restoration after a
+page reload, and rejection of a deliberately wrong-audio manifest. Neither
+the test nor a successful result constitutes human verification of actual
+Arabic transcription. Run locally with \`pip install playwright\`, a
+Chrome/Chromium binary, and \`python scripts/browser_review_acceptance.py\`.
