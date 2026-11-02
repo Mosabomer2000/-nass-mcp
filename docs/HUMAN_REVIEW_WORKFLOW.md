@@ -139,3 +139,22 @@ page reload, and rejection of a deliberately wrong-audio manifest. Neither
 the test nor a successful result constitutes human verification of actual
 Arabic transcription. Run locally with \`pip install playwright\`, a
 Chrome/Chromium binary, and \`python scripts/browser_review_acceptance.py\`.
+
+
+## Source-to-hypothesis cryptographic binding (required for credible WER/CER)
+
+Modern Nass ASR results record `recognition.audio_sha256` at inference
+time, and compare that hash with the exact local input after inference.
+The review template, clip exporter and scorer now require the digest of
+the reviewed recording to match the persisted ASR digest. Equal durations,
+file names, or matching reviewer manifests are NOT sufficient.
+
+Historical `result.json` files without a recognition-time SHA-256 cannot be
+retroactively verified by hashing whatever recording happens to be on disk
+today. These legacy results are deliberately rejected for verified excerpt
+WER/CER and review-clip export; re-run the exact authorized source media
+with updated Nass and generate a new template.
+
+SHA-256 proves content identity, not ASR accuracy or reviewer listening.
+Keep the original result and reviewer manifest in a trusted local workspace.
+The reviewed media and words remain private.
