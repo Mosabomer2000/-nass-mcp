@@ -34,7 +34,7 @@ def synthetic_wav(path: Path) -> None:
 
 def run_acceptance() -> dict:
     try:
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import sync_playwright, expect
     except ImportError as exc:
         raise RuntimeError("Install optional browser-test package: pip install playwright") from exc
 
@@ -107,7 +107,7 @@ def run_acceptance() -> dict:
                 })
                 assert page.locator("textarea").first.input_value() == "تجربة مراجعة بشرية"
                 assert page.locator('input[type="checkbox"]').first.is_checked()
-                assert "استُعيدت 2" in page.locator("#import-status").inner_text()
+                expect(page.locator("#import-status")).to_contain_text("استُعيدت 2")
 
                 # A malicious/different session cannot overwrite valid corrections.
                 changed = exported.replace(digest, "a" * 64 if digest != "a" * 64 else "b" * 64)
@@ -116,7 +116,7 @@ def run_acceptance() -> dict:
                     "mimeType": "application/x-ndjson",
                     "buffer": changed.encode("utf-8"),
                 })
-                assert "لم يُستورد" in page.locator("#import-status").inner_text()
+                expect(page.locator("#import-status")).to_contain_text("لم يُستورد")
                 assert page.locator("textarea").first.input_value() == "تجربة مراجعة بشرية"
                 assert not errors, "Browser JavaScript errors: " + "; ".join(errors)
                 assert not remote_requests, "Offline page issued remote HTTP requests"
