@@ -118,7 +118,7 @@ function readSavedReview(content) {
   if (typeof content !== "string" || content.length > 5_000_000) {
     throw new Error("ملف المراجعة كبير جدًا");
   }
-  const lines = content.split(/\\r?\\n/).filter(line => line.trim().length);
+  const lines = content.split(/\r?\n/).filter(line => line.trim().length);
   if (lines.length !== rows.length) {
     throw new Error("عدد مقاطع المراجعة لا يطابق الجلسة الحالية");
   }
