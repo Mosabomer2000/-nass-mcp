@@ -26,6 +26,12 @@ for k,v in row.items():
         entry["keys"] = list(v.keys())[:20]
         if isinstance(v.get("src"), str):
             entry["src_host"] = urlsplit(v["src"]).hostname
+    elif isinstance(v, list):
+        entry["length"] = len(v)
+        if v:
+            entry["item_type"] = type(v[0]).__name__
+            if isinstance(v[0], dict):
+                entry["first_item_keys"] = list(v[0].keys())[:20]
     elif isinstance(v, str):
         entry["chars"] = len(v)
         if k.lower() in ("text", "sentence", "reference", "transcript"):
