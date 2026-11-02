@@ -51,8 +51,13 @@ def main():
         report["audio"] = {"success": False, "source": "yt-dlp/default",
                            "error": safe_error(exc),
                            "elapsed_seconds": round(time.monotonic() - start, 2)}
+    report["acquisition_succeeded"] = bool(
+        report.get("caption", {}).get("success") or report.get("audio", {}).get("success")
+    )
     save()
     print(json.dumps(report, ensure_ascii=False, indent=2))
+    if not report["acquisition_succeeded"]:
+        raise SystemExit("Live acquisition failed; see the saved provider evidence")
 
 
 if __name__ == "__main__":
