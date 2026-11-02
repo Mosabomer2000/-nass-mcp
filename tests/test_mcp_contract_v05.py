@@ -18,7 +18,9 @@ def test_transcript_and_diagnostic_tools_register_in_mcp():
     async def check():
         async with Client(mcp, raise_exceptions=True) as client:
             tools = await client.list_tools()
-            names = {tool.name for tool in tools}
+            # MCP SDK 2.x returns (name, description/tool) tuples here.
+            names = {item[0] if isinstance(item, tuple) else
+                     getattr(item, "name", str(item)) for item in tools}
             assert {"nass_transcript_page", "nass_verification_page",
                     "nass_quality_report", "nass_job_diagnostics"}.issubset(names)
     asyncio.run(check())
