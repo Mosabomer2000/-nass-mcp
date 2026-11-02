@@ -16,6 +16,7 @@ import subprocess
 
 from nass_mcp.manual_review import file_digest, validate_result
 from nass_mcp.review_ui import render_review_html
+from nass_mcp.media_integrity import require_matching_media
 
 MAX_CLIPS = 200
 MAX_CLIP_SECONDS = 180.0
@@ -48,6 +49,7 @@ def prepare_intervals(result: dict, rows: list[dict], digest: str,
                       physical_duration: float) -> list[dict]:
     """Validate binding and intervals; never rely on editable reviewer fields."""
     _, job_duration = validate_result(result)
+    require_matching_media(result, digest)
     if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_CLIPS:
         raise ValueError("Review manifest must contain 1..200 rows")
     if physical_duration + 0.15 < job_duration:
