@@ -49,3 +49,32 @@ The local report now includes separate `metrics_by_review_kind` aggregates for
 fully contained, non-overlapping reviewed intervals can contribute to these
 statistics. Null values mean no qualifying reviewed reference exists; they
 are never treated as 0% word error.
+
+
+## Private listening pack: WAV clips rather than timestamps alone
+
+After generating the local JSONL template, create a **new private directory**
+of numbered WAV excerpts (16-kHz mono PCM) and a word-free index.json:
+
+    python scripts/export_review_clips.py \
+      --audio "$NASS_MEDIA_DIR/lecture.flac" \
+      --result "$NASS_DATA_DIR/jobs/JOB_ID/result.json" \
+      --manifest "$HOME/private-nass-review.jsonl" \
+      --output-dir "$HOME/private-nass-clips-001"
+
+The pack includes each seam and interior-control excerpt from the annotation
+manifest, using accurate FFmpeg seeking. Every review interval is bound to the
+SHA-256 of the exact audio, checked against the ASR job duration and physical
+file, and must be disjoint and no longer than 180 seconds. Each clip and the
+index are created with restrictive filesystem permissions (0700 directory,
+0600 files). An existing output directory is **never overwritten**.
+
+Open index.json to associate clip_0001.wav, etc., with the original review
+row IDs. Listen to the WAV clips and enter corrected reference text into the
+**original JSONL**, not index.json. Then run the existing scoring command above.
+
+**Important:** Clips are not uploaded or published. They may contain
+identifiable voices; keep the folder off public repositories, shared mounts,
+and public CI artifacts. The audio remains subject to its original licence.
+This export does not attest human review, certify transcription accuracy,
+or change the remaining YouTube-acquisition release gate.
