@@ -1,0 +1,66 @@
+name: Nass Render Docker and HTTP MCP acceptance
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'Dockerfile'
+      - 'render.yaml'
+      - 'src/nass_mcp/**'
+      - 'scripts/remote_http_smoke.py'
+      - '.github/workflows/render-remote-ci.yml'
+  push:
+    branches: ["feat/nass-v0501-validation"]
+    paths:
+      - 'Dockerfile'
+      - 'render.yaml'
+      - 'src/nass_mcp/auth_asgi.py'
+      - 'src/nass_mcp/remote.py'
+      - 'scripts/remote_http_smoke.py'
+      - '.github/workflows/render-remote-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nass-render-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render-docker-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NASS_BACKEND_TOKEN: temporary-ci-only-worker-token-83259e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build the exact production Dockerfile without deploying
+        run: docker build --pull --tag nass-render-smoke .
+      - name: Start a loopback-only test worker
+        run: |
+          docker run --detach --rm --name nass-render-ci \
+            --publish 127.0.0.1:18080:10000 \
+            --env NASS_BACKEND_TOKEN="$NASS_BACKEND_TOKEN" \
+            nass-render-smoke
+      - name: Check HTTPS-ready HTTP MCP protocol and auth on the built image
+        run: |
+          python - <<'PY'
+          import time
+          from urllib.request import urlopen
+          for attempt in range(90):
+              try:
+                  with urlopen('http://127.0.0.1:18080/healthz', timeout=2) as response:
+                      if response.status == 200:
+                          break
+              except Exception:
+                  time.sleep(2)
+          else:
+              raise SystemExit('Render worker never reached HTTP readiness')
+          PY
+          python -m scripts.remote_http_smoke --url http://127.0.0.1:18080/mcp
+      - name: Clean up CI worker
+        if: always()
+        run: docker stop nass-render-ci || true
