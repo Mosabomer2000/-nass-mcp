@@ -115,3 +115,18 @@ The run validates audio transcription, real MCP job completion,
 paginated delivery, chronological timestamps, structural QA,
 and seam-review access in a continuous natural recording; it does **not**
 validate YouTube source acquisition.
+
+
+## Reproducibility caveat and new source-identity acceptance gate
+
+The original 2026-11-02 run demonstrated operational feasibility, but its
+result predates persisted recognition-time source digests. The old
+`result.json` alone cannot certify that a future reviewer is scoring
+the same source bytes Whisper consumed. WER/CER remain unmeasured.
+
+The updated acceptance script verifies that the stored
+`recognition.audio_sha256` matches the actual extracted 30-minute FLAC
+used for inference. Its published report contains only a boolean
+`source_audio_sha256_bound`, not the media or recognized words.
+A cryptographically bound ASR job is eligible for private human annotation;
+actual human listening remains a separate, unfinished step.
