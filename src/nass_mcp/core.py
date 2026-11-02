@@ -195,12 +195,38 @@ class Result:
     audio_source: str = ""
     attempts: list[dict] = field(default_factory=list)
     verification: dict | None = None
+    recognition: dict | None = None
     def to_dict(self) -> dict:
         return {"video_id": self.video_id, "source": self.source, "language": self.language,
                 "audio_source": self.audio_source, "segments": self.segments,
                 "text": "\n".join(s["text"] for s in self.segments),
                 "attempts": self.attempts, "verification": self.verification,
+                "recognition": self.recognition,
                 "is_audio_asr": self.source.startswith("asr:")}
+
+
+def recognition_provenance(provider: str, duration: float | None = None) -> dict:
+    """Report reproducible recognition settings without user prompts, private paths or tokens."""
+    data = {"backend": provider}
+    if provider == "faster-whisper":
+        configured = os.environ.get("NASS_WHISPER_MODEL", "small")
+        data["model"] = "custom-local-model" if Path(configured).is_absolute() else configured
+        data["device"] = os.environ.get("NASS_DEVICE", "cpu")
+        data["compute_type"] = os.environ.get("NASS_COMPUTE_TYPE", "int8")
+        data["beam_size"] = max(1, min(5, int(os.environ.get("NASS_BEAM_SIZE", "5"))))
+        chunk = int(os.environ.get("NASS_ASR_CHUNK_SECONDS", "480"))
+        overlap = float(os.environ.get("NASS_ASR_OVERLAP_SECONDS", "4"))
+        data["configured_chunk_seconds"] = chunk
+        data["configured_overlap_seconds"] = overlap
+        if duration is not None and chunk > 0:
+            from .longform import plan_windows
+            data["planned_windows"] = len(plan_windows(duration, chunk, overlap))
+        elif chunk == 0:
+            data["planned_windows"] = 1
+        data["timestamp_quality"] = "approximate ASR segment boundaries, not forced-aligned"
+    else:
+        data["external_provider"] = provider.startswith("groq")
+    return data
 
 
 @lru_cache(maxsize=2)
@@ -457,8 +483,8 @@ class Engine:
                                    os.environ.get("NASS_COMPUTE_TYPE", "int8"))
         seconds = int(os.environ.get("NASS_ASR_CHUNK_SECONDS", "480"))
         overlap = float(os.environ.get("NASS_ASR_OVERLAP_SECONDS", "4"))
-        if seconds < 0 or seconds > 1800:
-            raise ValueError("NASS_ASR_CHUNK_SECONDS must be 0..1800")
+        if seconds < 0 or (0 < seconds < 4) or seconds > 1800:
+            raise ValueError("NASS_ASR_CHUNK_SECONDS must be 0 or 4..1800")
         if not 0 <= overlap <= 30:
             raise ValueError("NASS_ASR_OVERLAP_SECONDS must be 0..30")
         kwargs = {
@@ -649,7 +675,9 @@ class Engine:
                 return {"ok": True, **result.to_dict()}
             return {"ok": False, "error": safe_error(exc), "video_id": video_id, "attempts": attempts}
         result = Result(video_id, "asr:"+provider, segments, language,
-                        audio_source=audio_source, attempts=attempts)
+                        audio_source=audio_source, attempts=attempts,
+                        recognition=recognition_provenance(
+                            provider, self.check_audio(audio) if provider == "faster-whisper" else None))
         if mode == "verify" and captions:
             # Never conflate the captions with what was recognized from the sound.
             result.verification = {"captions_source": captions[1], "captions_segments": captions[0],
@@ -660,12 +688,14 @@ class Engine:
         audio = safe_input_audio(name)
         attempts = []
         try:
-            self.check_audio(audio)
+            duration = self.check_audio(audio)
             segments, provider = self.speech_to_text(audio, language,
                                                       workspace or self.root / "file-asr", attempts)
             return {"ok": True, **Result("local-file", "asr:"+provider, segments,
                                           language, audio_source="authorized-local-file",
-                                          attempts=attempts).to_dict()}
+                                          attempts=attempts,
+                                          recognition=recognition_provenance(
+                                              provider, duration)).to_dict()}
         except Exception as exc:
             return {"ok": False, "error": safe_error(exc), "attempts": attempts}
 

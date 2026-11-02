@@ -31,7 +31,7 @@ def render(result: dict, fmt: str) -> str:
     segments = result.get("segments", [])
     if fmt == "json":
         # Include transcript data but do not repeat raw third-party errors or signed URLs.
-        keys = ("video_id", "language", "source", "audio_source", "is_audio_asr", "segments", "verification")
+        keys = ("video_id", "language", "source", "audio_source", "is_audio_asr", "segments", "verification", "recognition")
         return json.dumps({k: result.get(k) for k in keys}, ensure_ascii=False, indent=2)
     if fmt == "txt":
         return "\n".join(str(s["text"]) for s in segments) + ("\n" if segments else "")
