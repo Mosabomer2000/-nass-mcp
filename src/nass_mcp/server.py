@@ -7,10 +7,11 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.utilities.types import Audio
 
 from .core import Engine, JobStore, get_video_id, health, safe_error
+from .acquisition_v05 import acquisition_report
 
 mcp = MCPServer(
     "Nass — Resilient YouTube Transcription",
-    version="0.3.1",
+    version="0.5.0",
     instructions=(
         "Use nass_start_transcription with mode='audio' when actual spoken sound must be "
         "recognized, not merely subtitle text. Poll nass_job_status, then page through "
@@ -26,6 +27,12 @@ jobs = JobStore(engine)
 def nass_health() -> dict:
     """Inspect availability of independent caption/audio/ASR backends; never claim success from installation alone."""
     return health()
+
+
+@mcp.tool()
+def nass_acquisition_report() -> dict:
+    """Inspect optional caption and PO-token provider setup, not live readiness."""
+    return acquisition_report()
 
 
 @mcp.tool()

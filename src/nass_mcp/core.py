@@ -21,6 +21,7 @@ from functools import lru_cache
 from datetime import datetime, timezone
 from typing import Callable, Any
 from urllib.parse import urlparse, parse_qs
+from .acquisition_v05 import fetch_invidious_captions
 from uuid import uuid4
 
 ROOT = Path(os.environ.get("NASS_DATA_DIR", Path.home() / ".cache" / "nass-mcp")).expanduser().resolve()
@@ -91,7 +92,8 @@ def safe_error(exc: Exception) -> str:
     for private_path in (str(ROOT), str(MEDIA_ROOT), str(Path.home())):
         if private_path and private_path != "/":
             s = s.replace(private_path, "[server-path]")
-    for secret in (os.environ.get("GROQ_API_KEY", ""), os.environ.get("NASS_BEARER_TOKEN", "")):
+    for name in ("GROQ_API_KEY", "NASS_BEARER_TOKEN", "NASS_BACKEND_TOKEN", "NASS_MCP_BEARER_TOKEN"):
+        secret = os.environ.get(name, "")
         if secret:
             s = s.replace(secret, "[redacted]")
     return f"{type(exc).__name__}: {s}"
@@ -380,6 +382,9 @@ class Engine:
             ("youtubejs", lambda: self.youtubejs_audio(video_id, work / "youtubejs")),
             ("youtubedr", lambda: self.youtubedr_audio(video_id, work / "youtubedr")),
         ]
+        if os.environ.get("NASS_ENABLE_MWEB_POT") == "1":
+            methods.insert(0, ("yt-dlp/mweb-opt-in", lambda: self.ytdlp_audio(
+                video_id, work / "ytdlp_mweb", "mweb")))
         for name, fn in methods:
             try:
                 audio = fn()
@@ -538,10 +543,15 @@ class Engine:
                     return segments, "cache:" + saved.get("source", "captions")
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
             saved = None
-        for name, fn in (
+        methods = [
             ("youtube-transcript-api", lambda: self.yt_captions(video_id, language)),
             ("yt-dlp-captions", lambda: self.ytdlp_captions(video_id, language, work / "subs")),
-            ("yt-transcript-go", lambda: self.go_captions(video_id, language, work / "go_subs"))):
+            ("yt-transcript-go", lambda: self.go_captions(video_id, language, work / "go_subs")),
+        ]
+        if os.environ.get("NASS_INVIDIOUS_URL"):
+            methods.append(("invidious-operator-configured", lambda: fetch_invidious_captions(
+                video_id, language, parse_vtt)))
+        for name, fn in methods:
             try:
                 segments, provider = fn()
                 if not segments:
