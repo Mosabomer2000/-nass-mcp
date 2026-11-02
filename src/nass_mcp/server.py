@@ -147,6 +147,18 @@ def nass_verification_page(job_id: str, track: str = "captions",
 
 
 @mcp.tool()
+def nass_seam_review(job_id: str, start_seam: int = 0, count: int = 8,
+                     context_seconds: float = 5.0,
+                     include_text: bool = True) -> dict:
+    """Page through audio windows requiring human review at ASR chunk boundaries."""
+    try:
+        from .seam_review import seam_review_page
+        return seam_review_page(jobs, job_id, start_seam, count, context_seconds, include_text)
+    except Exception as exc:
+        return {"ok": False, "error": safe_error(exc)}
+
+
+@mcp.tool()
 def nass_quality_report(job_id: str) -> dict:
     """Identify structural anomalies; never present a fabricated accuracy score."""
     try:

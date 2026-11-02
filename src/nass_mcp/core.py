@@ -218,6 +218,8 @@ def recognition_provenance(provider: str, duration: float | None = None) -> dict
         overlap = float(os.environ.get("NASS_ASR_OVERLAP_SECONDS", "4"))
         data["configured_chunk_seconds"] = chunk
         data["configured_overlap_seconds"] = overlap
+        if duration is not None:
+            data["duration_seconds"] = round(float(duration), 3)
         if duration is not None and chunk > 0:
             from .longform import plan_windows
             data["planned_windows"] = len(plan_windows(duration, chunk, overlap))
