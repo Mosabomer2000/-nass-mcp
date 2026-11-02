@@ -174,8 +174,11 @@ def evaluate_reviews(result: dict, rows: list[dict], audio_sha256: str) -> dict:
         except ValueError:
             rejected.append({"id": item_id, "reason": "reference_not_comparable"})
             continue
-        scored.append({"id": item_id, "ok": True, "reference_quality": "human_verified",
-                       "metrics": metrics})
+        kind = row.get("kind", "custom")
+        if kind not in ("decoder_seam", "interior_control", "custom"):
+            raise ValueError("Unsupported audit group")
+        scored.append({"id": item_id, "kind": kind, "ok": True,
+                       "reference_quality": "human_verified", "metrics": metrics})
     # Require non-overlapping attested intervals; otherwise a word can count
     # several times and make the micro-average statistically misleading.
     sorted_intervals = sorted(intervals)
@@ -183,8 +186,13 @@ def evaluate_reviews(result: dict, rows: list[dict], audio_sha256: str) -> dict:
         if left[1] > right[0]+0.001:
             raise ValueError("Review intervals overlap; revise annotation boundaries")
     total = aggregate(scored)
+    per_kind = {
+        kind: aggregate([row for row in scored if row["kind"] == kind])
+        for kind in ("decoder_seam", "interior_control", "custom")
+    }
     return {
         "source": "human-attested local audio excerpts",
+        "metrics_by_review_kind": per_kind,
         "review_rows": len(rows), "scored_rows": len(scored),
         "excluded_rows": rejected,
         "aggregate": total,
