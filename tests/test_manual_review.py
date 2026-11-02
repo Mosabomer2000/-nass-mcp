@@ -118,9 +118,35 @@ def test_seam_and_interior_control_accuracy_are_separately_reported():
          "audio_sha256": DIGEST, "reference_text": "الإخلاص",
          "review_state": "human_checked", "reviewer_attestation": True},
     ]
-    out = evaluate_reviews(result(), rows, DIGEST)
+    value = result()
+    # Use a 18-second decoder window: seams fall at 16 and 30 seconds.
+    # The control sample at 32..38 is genuinely away from both seams.
+    value["recognition"]["configured_chunk_seconds"] = 18
+    out = evaluate_reviews(value, rows, DIGEST)
     groups = out["metrics_by_review_kind"]
     assert groups["decoder_seam"]["micro_wer"] == 0
     assert groups["interior_control"]["micro_wer"] == 1
     assert groups["custom"]["micro_wer"] is None
     assert out["full_recording_wer"] is None
+
+
+def test_forged_seam_group_is_not_scored_as_real_decoder_seam():
+    row = {"id": "forged-seam", "kind": "decoder_seam",
+           "start_seconds": 32, "end_seconds": 38,
+           "audio_sha256": DIGEST, "reference_text": "الصدق",
+           "review_state": "human_checked", "reviewer_attestation": True}
+    value = result()
+    value["recognition"]["configured_chunk_seconds"] = 18
+    output = evaluate_reviews(value, [row], DIGEST)
+    assert output["scored_rows"] == 0
+    assert output["excluded_rows"][0]["reason"] == "not_a_decoder_seam_interval"
+
+
+def test_control_interval_containing_real_seam_is_not_scored():
+    row = {"id": "contaminated-control", "kind": "interior_control",
+           "start_seconds": 32, "end_seconds": 38,
+           "audio_sha256": DIGEST, "reference_text": "الصدق",
+           "review_state": "human_checked", "reviewer_attestation": True}
+    out = evaluate_reviews(result(), [row], DIGEST)
+    assert out["scored_rows"] == 0
+    assert out["excluded_rows"][0]["reason"] == "control_contains_decoder_seam"
