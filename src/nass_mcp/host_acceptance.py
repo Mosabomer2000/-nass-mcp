@@ -10,6 +10,7 @@ from mcp import Client
 
 from .core import get_video_id
 from .server import mcp
+from .runtime_resources import snapshot_process, resource_delta
 
 
 def unwrap(result) -> dict:
@@ -41,7 +42,7 @@ def unwrap(result) -> dict:
     raise RuntimeError("MCP tool did not return a valid structured result")
 
 
-async def run_acceptance(*, youtube: str | None = None, local_file: str | None = None,
+async def _run_acceptance_unprofiled(*, youtube: str | None = None, local_file: str | None = None,
                          language: str = "ar", max_wait_seconds: int = 1800) -> dict:
     """Actually exercise queue, media acquisition (if YouTube), ASR and MCP paging.
 
@@ -123,3 +124,18 @@ async def run_acceptance(*, youtube: str | None = None, local_file: str | None =
                                 "mcp_job_completed", "mcp_delivery",
                                 "mcp_structural_qa"))
         return output
+
+
+async def run_acceptance(*, youtube: str | None = None, local_file: str | None = None,
+                         language: str = "ar", max_wait_seconds: int = 1800) -> dict:
+    """Wrap the actual MCP acceptance path with resource measurements.
+
+    Linux/macOS max RSS is a high-water mark for the lifetime of the process;
+    it is not a per-job memory allocation or a hard upper bound.
+    """
+    before = snapshot_process()
+    report = await _run_acceptance_unprofiled(
+        youtube=youtube, local_file=local_file, language=language,
+        max_wait_seconds=max_wait_seconds)
+    report["resource_profile"] = resource_delta(before, snapshot_process())
+    return report
