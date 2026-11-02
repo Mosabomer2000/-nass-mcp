@@ -18,6 +18,7 @@ from nass_mcp.longform import plan_windows
 from nass_mcp.media_integrity import media_sha256, require_matching_media
 from nass_mcp.seam_review import seam_review_page
 from nass_mcp.server import jobs
+from scripts.probe_private_audit_pack import probe_private_pack
 
 
 def detect_language(audio: Path, seconds: float = 90, offsets=(90, 660, 1250)) -> list[dict]:
@@ -70,6 +71,7 @@ async def main():
         "human_verified_transcript_exists": False,
         "wer": None, "cer": None,
         "source_audio_sha256_bound": False,
+        "private_review_pack_probe": None,
         "audio_or_transcript_text_in_artifact": False,
     }
     # Proceed only on genuinely Arabic speech. A title alone is not evidence.
@@ -99,10 +101,26 @@ async def main():
             output["recording_end_covered"] = bool(
                 segments and segments[-1]["end"] > duration * 0.70)
             output["recognized_segments"] = len(segments)
+            if output["source_audio_sha256_bound"]:
+                try:
+                    output["private_review_pack_probe"] = probe_private_pack(
+                        path, result, context_seconds=8, controls=8,
+                    )
+                except Exception as exc:
+                    # This report is PUBLIC. Never include private audio, words,
+                    # local paths or arbitrary exception messages.
+                    output["private_review_pack_probe"] = {
+                        "private_pack_generated_on_real_source": False,
+                        "failure_class": type(exc).__name__,
+                        "private_pack_uploaded": False,
+                    }
             output["passed"] = bool(output.get("passed") and output["chronological"]
                                     and output["recording_end_covered"]
                                     and output["seam_review_ready"]
                                     and output["source_audio_sha256_bound"]
+                                    and bool(output["private_review_pack_probe"] and
+                                             output["private_review_pack_probe"].get(
+                                                 "private_pack_generated_on_real_source"))
                                     and output["seams"] == len(windows)-1)
     report = Path("nass-natural-arabic-30min-evidence.json")
     report.write_text(json.dumps(output, ensure_ascii=False, indent=2), "utf-8")
