@@ -158,3 +158,36 @@ with updated Nass and generate a new template.
 SHA-256 proves content identity, not ASR accuracy or reviewer listening.
 Keep the original result and reviewer manifest in a trusted local workspace.
 The reviewed media and words remain private.
+
+
+## One-command private review pack from a source-bound completed job
+
+A successful public CI benchmark is not a transferable review session: its
+30-minute source audio and ASR text are intentionally not published.
+To review a lecture, process its exact authorized recording LOCALLY, retain
+the completed result.json, and prepare the private review pack:
+
+    python -m scripts.prepare_human_audit \
+      --audio "$NASS_MEDIA_DIR/lecture.flac" \
+      --result "$NASS_DATA_DIR/jobs/JOB_ID/result.json" \
+      --output-dir "$HOME/private-nass-review-001" \
+      --controls 8 --context 8
+
+This performs recognition-time SHA256 verification, selects up to 40
+decoder seams and eight deterministic non-seam controls, extracts genuine
+WAV excerpts and creates the following PRIVATE files:
+
+- review.html: local listening, correction, checkpoint resume
+- index.json: source times and IDs only; no transcript words
+- annotations-pending.jsonl: unreviewed reference checkpoint
+- clip_0001.wav, ... : exact audio excerpts, never public CI artifacts
+
+Open review.html and export nass-reviewed.jsonl only after actually listening.
+Score it with scripts/manual_audio_review.py score as described above.
+Before review all references are empty, attestations false and WER/CER null.
+Old ASR results without recognition-time source hashes cannot produce this
+pack; re-run the audio using the updated engine.
+
+Do NOT run this private pack generator in public GitHub Actions. Its tests
+use only artificial sine-tone recordings and explicitly verify that no
+unreviewed recording can acquire a fabricated accuracy estimate.
