@@ -8,6 +8,7 @@ from mcp.server.mcpserver.utilities.types import Audio
 
 from .core import Engine, JobStore, get_video_id, health, safe_error
 from .acquisition_v05 import acquisition_report
+from .delivery import transcript_page, verification_page, quality_report
 
 mcp = MCPServer(
     "Nass — Resilient YouTube Transcription",
@@ -112,6 +113,35 @@ def nass_audio_excerpt(job_id: str, start_seconds: float, duration_seconds: floa
     """
     try:
         return Audio(path=jobs.make_audio_clip(job_id, start_seconds, duration_seconds))
+    except Exception as exc:
+        return {"ok": False, "error": safe_error(exc)}
+
+
+@mcp.tool()
+def nass_transcript_page(job_id: str, output_format: str = "md", offset: int = 0,
+                         max_chars: int = 12000) -> dict:
+    """Read the complete original transcript in bounded, downloadable-by-client text pages."""
+    try:
+        return transcript_page(jobs, job_id, output_format, offset, max_chars)
+    except Exception as exc:
+        return {"ok": False, "error": safe_error(exc)}
+
+
+@mcp.tool()
+def nass_verification_page(job_id: str, track: str = "captions",
+                           start_segment: int = 0, count: int = 60) -> dict:
+    """Read the audio-ASR and caption hypotheses separately for quote verification."""
+    try:
+        return verification_page(jobs, job_id, track, start_segment, count)
+    except Exception as exc:
+        return {"ok": False, "error": safe_error(exc)}
+
+
+@mcp.tool()
+def nass_quality_report(job_id: str) -> dict:
+    """Identify structural anomalies; never present a fabricated accuracy score."""
+    try:
+        return quality_report(jobs, job_id)
     except Exception as exc:
         return {"ok": False, "error": safe_error(exc)}
 
