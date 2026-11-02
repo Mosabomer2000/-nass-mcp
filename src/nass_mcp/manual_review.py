@@ -126,6 +126,18 @@ def evaluate_reviews(result: dict, rows: list[dict], audio_sha256: str) -> dict:
     WER/CER comparison because the model did not emit word-level alignment.
     """
     segments, duration = validate_result(result)
+    # Audited group labels must agree with the model's stored window plan.
+    # Otherwise moving an easy sample into the seam group can fabricate a
+    # misleading seam-vs-control comparison.
+    settings = result.get("recognition") or {}
+    chunk = settings.get("configured_chunk_seconds")
+    overlap = settings.get("configured_overlap_seconds")
+    if (type(chunk) is int and 4 <= chunk <= 1800
+            and isinstance(overlap, (int, float)) and not isinstance(overlap, bool)
+            and math.isfinite(overlap) and 0 <= overlap < chunk / 2):
+        seams = [w.own_until for w in plan_windows(duration, chunk, overlap)[:-1]]
+    else:
+        seams = []
     if not isinstance(rows, list) or len(rows) > 200:
         raise ValueError("Invalid review manifest")
     if not isinstance(audio_sha256, str) or len(audio_sha256) != 64:
@@ -177,6 +189,12 @@ def evaluate_reviews(result: dict, rows: list[dict], audio_sha256: str) -> dict:
         kind = row.get("kind", "custom")
         if kind not in ("decoder_seam", "interior_control", "custom"):
             raise ValueError("Unsupported audit group")
+        if kind == "decoder_seam" and not any(start < t < end for t in seams):
+            rejected.append({"id": item_id, "reason": "not_a_decoder_seam_interval"})
+            continue
+        if kind == "interior_control" and any(start <= t <= end for t in seams):
+            rejected.append({"id": item_id, "reason": "control_contains_decoder_seam"})
+            continue
         scored.append({"id": item_id, "kind": kind, "ok": True,
                        "reference_quality": "human_verified", "metrics": metrics})
     # Require non-overlapping attested intervals; otherwise a word can count
