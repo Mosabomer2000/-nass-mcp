@@ -13,6 +13,7 @@ from pathlib import Path
 from nass_mcp.core import Engine
 from nass_mcp.host_acceptance import run_acceptance
 from nass_mcp.longform import plan_windows
+from nass_mcp.seam_review import seam_review_page
 from nass_mcp.server import jobs
 
 
@@ -35,6 +36,13 @@ async def main():
         path = jobs.base / report["job_id"] / "result.json"
         data = json.loads(path.read_text("utf-8"))
         segments = data.get("segments", [])
+        seam_report = seam_review_page(jobs, report["job_id"], count=20,
+                                       include_text=False)
+        report["seam_review_available"] = seam_report.get("ok") is True
+        report["seams_requiring_listening"] = seam_report.get("seam_count")
+        report["seam_review_contains_spoken_text"] = False
+        report["seam_count_matches_windows"] = (
+            seam_report.get("seam_count") == len(windows)-1)
         report["recognized_segment_count"] = len(segments)
         report["last_segment_end"] = segments[-1]["end"] if segments else None
         report["timestamp_monotonic"] = all(
@@ -44,6 +52,7 @@ async def main():
             segments[-1]["end"] >= duration * 0.6)
         report["passed"] = bool(report["passed"] and
             report["timestamp_monotonic"] and
+            report["seam_review_available"] and report["seam_count_matches_windows"] and
             report["speech_recognized_near_end"] and
             report["recognized_segment_count"] >= len(windows))
     path = Path(os.environ.get("NASS_LONGFORM_REPORT", "nass-longform-asr.json"))

@@ -15,6 +15,7 @@ from nass_mcp.benchmark import score
 from nass_mcp.core import Engine
 from nass_mcp.host_acceptance import run_acceptance
 from nass_mcp.longform import plan_windows
+from nass_mcp.seam_review import seam_review_page
 from nass_mcp.server import jobs
 
 
@@ -67,12 +68,20 @@ async def main():
         segments = result.get("segments", [])
         text = " ".join(str(item.get("text", "")) for item in segments)
         reference = " ".join(row["reference"] for row in rows)
+        seam_report = seam_review_page(jobs, output["job_id"], count=20,
+                                       include_text=False)
+        output["seam_review_available"] = seam_report.get("ok") is True
+        output["seams_requiring_listening"] = seam_report.get("seam_count")
+        output["seam_review_contains_spoken_text"] = False
+        output["seam_count_matches_windows"] = (
+            seam_report.get("seam_count") == len(windows)-1)
         output["metrics"] = score(reference, text, "arabic_basic")
         output["timestamp_monotonic"] = all(
             segments[i]["start"] <= segments[i+1]["start"]
             for i in range(len(segments)-1))
         output["speech_near_end"] = bool(segments and segments[-1]["end"] >= duration * 0.6)
         output["passed"] = bool(output["passed"] and output["timestamp_monotonic"]
+                                and output["seam_review_available"] and output["seam_count_matches_windows"]
                                 and output["speech_near_end"] and len(segments) >= len(windows))
     path = Path("nass-arabic-longform-report.json")
     path.write_text(json.dumps(output, ensure_ascii=False, indent=2), "utf-8")
