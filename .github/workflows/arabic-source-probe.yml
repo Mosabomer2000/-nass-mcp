@@ -1,0 +1,21 @@
+name: Nass Arabic dataset smoke
+on:
+  push:
+    branches: [feat/nass-v0501-validation]
+    paths:
+      - 'scripts/arabic_sample_probe.py'
+      - '.github/workflows/arabic-source-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check public Arabic audio and reference row metadata
+        run: python scripts/arabic_sample_probe.py
