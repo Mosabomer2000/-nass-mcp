@@ -1,0 +1,48 @@
+name: Nass human-reviewed Arabic ASR acceptance
+on:
+  push:
+    branches: [feat/nass-v0501-validation]
+    paths:
+      - 'scripts/get_nahw_fixture.py'
+      - '.github/workflows/nahw-asr.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  nahw-evaluation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NASS_MEDIA_DIR: ${{ github.workspace }}/nahw-input
+      NASS_DATA_DIR: ${{ github.workspace }}/nahw-results
+      NASS_WHISPER_MODEL: small
+      NASS_DEVICE: cpu
+      NASS_COMPUTE_TYPE: int8
+      NASS_BEAM_SIZE: '3'
+      NASS_ALLOW_EXTERNAL_ASR: '0'
+      HF_HUB_DISABLE_PROGRESS_BARS: '1'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install FFmpeg and local Whisper
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          python -m pip install -e '.[asr]'
+      - name: Acquire forty human-reviewed Arabic references from the open dataset
+        run: python scripts/get_nahw_fixture.py
+      - name: Compare actual model audio transcripts with reviewed reference text
+        run: |
+          python scripts/arabic_asr_benchmark.py \
+            --manifest nass-nahw-eval.jsonl \
+            --output nass-nahw-asr-report.json \
+            --max-samples 40 --policy arabic_basic
+      - name: Preserve metrics only; do not upload speech or references
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nass-nahw-human-reviewed-metrics
+          path: nass-nahw-asr-report.json
+          if-no-files-found: warn

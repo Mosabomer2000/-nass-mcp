@@ -7,10 +7,12 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.utilities.types import Audio
 
 from .core import Engine, JobStore, get_video_id, health, safe_error
+from .acquisition_v05 import acquisition_report
+from .delivery import transcript_page, verification_page, quality_report
 
 mcp = MCPServer(
     "Nass — Resilient YouTube Transcription",
-    version="0.3.1",
+    version="0.5.0",
     instructions=(
         "Use nass_start_transcription with mode='audio' when actual spoken sound must be "
         "recognized, not merely subtitle text. Poll nass_job_status, then page through "
@@ -26,6 +28,12 @@ jobs = JobStore(engine)
 def nass_health() -> dict:
     """Inspect availability of independent caption/audio/ASR backends; never claim success from installation alone."""
     return health()
+
+
+@mcp.tool()
+def nass_acquisition_report() -> dict:
+    """Inspect optional caption and PO-token provider setup, not live readiness."""
+    return acquisition_report()
 
 
 @mcp.tool()
@@ -54,6 +62,24 @@ def nass_job_status(job_id: str) -> dict:
     """Get queued/running/completed/failed status and the precise fallback attempt ledger."""
     try:
         return jobs.get_status(job_id)
+    except Exception as exc:
+        return {"ok": False, "error": safe_error(exc)}
+
+
+@mcp.tool()
+def nass_cancel_job(job_id: str) -> dict:
+    """Cancel a queued transcription before it starts; do not kill running ASR."""
+    try:
+        return jobs.cancel(job_id)
+    except Exception as exc:
+        return {"ok": False, "error": safe_error(exc)}
+
+
+@mcp.tool()
+def nass_job_diagnostics(job_id: str) -> dict:
+    """Classify a job's observed provider failures without returning raw error messages."""
+    try:
+        return jobs.diagnose(job_id)
     except Exception as exc:
         return {"ok": False, "error": safe_error(exc)}
 
@@ -96,6 +122,47 @@ def nass_audio_excerpt(job_id: str, start_seconds: float, duration_seconds: floa
     """
     try:
         return Audio(path=jobs.make_audio_clip(job_id, start_seconds, duration_seconds))
+    except Exception as exc:
+        return {"ok": False, "error": safe_error(exc)}
+
+
+@mcp.tool()
+def nass_transcript_page(job_id: str, output_format: str = "md", offset: int = 0,
+                         max_chars: int = 12000) -> dict:
+    """Read the complete original transcript in bounded, downloadable-by-client text pages."""
+    try:
+        return transcript_page(jobs, job_id, output_format, offset, max_chars)
+    except Exception as exc:
+        return {"ok": False, "error": safe_error(exc)}
+
+
+@mcp.tool()
+def nass_verification_page(job_id: str, track: str = "captions",
+                           start_segment: int = 0, count: int = 60) -> dict:
+    """Read the audio-ASR and caption hypotheses separately for quote verification."""
+    try:
+        return verification_page(jobs, job_id, track, start_segment, count)
+    except Exception as exc:
+        return {"ok": False, "error": safe_error(exc)}
+
+
+@mcp.tool()
+def nass_seam_review(job_id: str, start_seam: int = 0, count: int = 8,
+                     context_seconds: float = 5.0,
+                     include_text: bool = True) -> dict:
+    """Page through audio windows requiring human review at ASR chunk boundaries."""
+    try:
+        from .seam_review import seam_review_page
+        return seam_review_page(jobs, job_id, start_seam, count, context_seconds, include_text)
+    except Exception as exc:
+        return {"ok": False, "error": safe_error(exc)}
+
+
+@mcp.tool()
+def nass_quality_report(job_id: str) -> dict:
+    """Identify structural anomalies; never present a fabricated accuracy score."""
+    try:
+        return quality_report(jobs, job_id)
     except Exception as exc:
         return {"ok": False, "error": safe_error(exc)}
 

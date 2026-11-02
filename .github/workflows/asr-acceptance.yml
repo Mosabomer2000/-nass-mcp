@@ -1,0 +1,62 @@
+name: Nass real-audio ASR acceptance
+on:
+  push:
+    branches: [feat/nass-v0501-validation]
+    paths:
+      - 'scripts/asr_acceptance.py'
+      - 'scripts/host_acceptance.py'
+      - 'src/nass_mcp/host_acceptance.py'
+      - '.github/workflows/asr-acceptance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  actual-asr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NASS_MEDIA_DIR: ${{ github.workspace }}/nass-asr-input
+      NASS_DATA_DIR: ${{ github.workspace }}/nass-asr-data
+      NASS_WHISPER_MODEL: tiny.en
+      NASS_DEVICE: cpu
+      NASS_COMPUTE_TYPE: int8
+      NASS_BEAM_SIZE: '2'
+      NASS_ALLOW_EXTERNAL_ASR: '0'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      HF_HUB_DISABLE_PROGRESS_BARS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install local ASR dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          python -m pip install -e '.[asr]'
+      - name: Fetch public-domain speech sample with pinned Git blob integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$NASS_MEDIA_DIR"
+          curl --fail --location --silent --show-error --retry 2 \
+            'https://raw.githubusercontent.com/openai/whisper/main/tests/jfk.flac' \
+            --output "$NASS_MEDIA_DIR/jfk.flac"
+          echo 'e44b7c13897eae7f78beb220c61fe77429a3961d' > expected-git-blob
+          test "$(git hash-object "$NASS_MEDIA_DIR/jfk.flac")" = "$(cat expected-git-blob)"
+          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 "$NASS_MEDIA_DIR/jfk.flac"
+      - name: Run real audio through the MCP SDK and local Whisper model
+        run: python scripts/asr_acceptance.py
+      - name: Validate operator-owned MCP host acceptance on actual audio
+        run: |
+          python scripts/host_acceptance.py \
+            --local-file jfk.flac --language en --max-wait 180 \
+            --output nass-host-acceptance.json
+      - name: Preserve acceptance result even on errors
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nass-real-audio-asr-acceptance
+          path: |
+            nass-asr-acceptance.json
+            nass-host-acceptance.json
+          if-no-files-found: warn

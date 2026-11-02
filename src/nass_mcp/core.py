@@ -13,6 +13,7 @@ import re
 import shutil
 import time
 import subprocess
+import tempfile
 import threading
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -21,6 +22,8 @@ from functools import lru_cache
 from datetime import datetime, timezone
 from typing import Callable, Any
 from urllib.parse import urlparse, parse_qs
+from .acquisition_v05 import fetch_invidious_captions
+from .media_integrity import media_sha256
 from uuid import uuid4
 
 ROOT = Path(os.environ.get("NASS_DATA_DIR", Path.home() / ".cache" / "nass-mcp")).expanduser().resolve()
@@ -91,7 +94,8 @@ def safe_error(exc: Exception) -> str:
     for private_path in (str(ROOT), str(MEDIA_ROOT), str(Path.home())):
         if private_path and private_path != "/":
             s = s.replace(private_path, "[server-path]")
-    for secret in (os.environ.get("GROQ_API_KEY", ""), os.environ.get("NASS_BEARER_TOKEN", "")):
+    for name in ("GROQ_API_KEY", "NASS_BEARER_TOKEN", "NASS_BACKEND_TOKEN", "NASS_MCP_BEARER_TOKEN"):
+        secret = os.environ.get(name, "")
         if secret:
             s = s.replace(secret, "[redacted]")
     return f"{type(exc).__name__}: {s}"
@@ -192,12 +196,40 @@ class Result:
     audio_source: str = ""
     attempts: list[dict] = field(default_factory=list)
     verification: dict | None = None
+    recognition: dict | None = None
     def to_dict(self) -> dict:
         return {"video_id": self.video_id, "source": self.source, "language": self.language,
                 "audio_source": self.audio_source, "segments": self.segments,
                 "text": "\n".join(s["text"] for s in self.segments),
                 "attempts": self.attempts, "verification": self.verification,
+                "recognition": self.recognition,
                 "is_audio_asr": self.source.startswith("asr:")}
+
+
+def recognition_provenance(provider: str, duration: float | None = None) -> dict:
+    """Report reproducible recognition settings without user prompts, private paths or tokens."""
+    data = {"backend": provider}
+    if provider == "faster-whisper":
+        configured = os.environ.get("NASS_WHISPER_MODEL", "small")
+        data["model"] = "custom-local-model" if Path(configured).is_absolute() else configured
+        data["device"] = os.environ.get("NASS_DEVICE", "cpu")
+        data["compute_type"] = os.environ.get("NASS_COMPUTE_TYPE", "int8")
+        data["beam_size"] = max(1, min(5, int(os.environ.get("NASS_BEAM_SIZE", "5"))))
+        chunk = int(os.environ.get("NASS_ASR_CHUNK_SECONDS", "480"))
+        overlap = float(os.environ.get("NASS_ASR_OVERLAP_SECONDS", "4"))
+        data["configured_chunk_seconds"] = chunk
+        data["configured_overlap_seconds"] = overlap
+        if duration is not None:
+            data["duration_seconds"] = round(float(duration), 3)
+        if duration is not None and chunk > 0:
+            from .longform import plan_windows
+            data["planned_windows"] = len(plan_windows(duration, chunk, overlap))
+        elif chunk == 0:
+            data["planned_windows"] = 1
+        data["timestamp_quality"] = "approximate ASR segment boundaries, not forced-aligned"
+    else:
+        data["external_provider"] = provider.startswith("groq")
+    return data
 
 
 @lru_cache(maxsize=2)
@@ -380,6 +412,9 @@ class Engine:
             ("youtubejs", lambda: self.youtubejs_audio(video_id, work / "youtubejs")),
             ("youtubedr", lambda: self.youtubedr_audio(video_id, work / "youtubedr")),
         ]
+        if os.environ.get("NASS_ENABLE_MWEB_POT") == "1":
+            methods.insert(0, ("yt-dlp/mweb-opt-in", lambda: self.ytdlp_audio(
+                video_id, work / "ytdlp_mweb", "mweb")))
         for name, fn in methods:
             try:
                 audio = fn()
@@ -437,13 +472,61 @@ class Engine:
         return duration
 
     def faster_whisper_asr(self, audio: Path, language: str) -> list[dict]:
+        """Transcribe short clips as before, but bound memory for long audio.
+
+        Each long-form window is decoded independently, while the model is loaded
+        once. Adjacent windows overlap and each timestamp belongs to exactly one
+        window's midpoint interval; raw audio and intermediate WAVs are removed
+        when the temporary directory closes. Never return a partially successful
+        long-form transcript if a chunk fails.
+        """
+        from .longform import plan_windows, combine_segments
         model_name = os.environ.get("NASS_WHISPER_MODEL", "small")
         model = load_whisper_model(model_name, os.environ.get("NASS_DEVICE", "cpu"),
                                    os.environ.get("NASS_COMPUTE_TYPE", "int8"))
-        segments, _ = model.transcribe(str(audio), language=None if language in ("auto", "") else language,
-                                       beam_size=max(1, min(5, int(os.environ.get("NASS_BEAM_SIZE", "5")))), vad_filter=True,
-                                       initial_prompt=os.environ.get("NASS_INITIAL_PROMPT") or None)
-        return to_segments([{"start": s.start, "end": s.end, "text": s.text} for s in segments])
+        seconds = int(os.environ.get("NASS_ASR_CHUNK_SECONDS", "480"))
+        overlap = float(os.environ.get("NASS_ASR_OVERLAP_SECONDS", "4"))
+        if seconds < 0 or (0 < seconds < 4) or seconds > 1800:
+            raise ValueError("NASS_ASR_CHUNK_SECONDS must be 0 or 4..1800")
+        if not 0 <= overlap <= 30:
+            raise ValueError("NASS_ASR_OVERLAP_SECONDS must be 0..30")
+        kwargs = {
+            "language": None if language in ("auto", "") else language,
+            "beam_size": max(1, min(5, int(os.environ.get("NASS_BEAM_SIZE", "5")))),
+            "vad_filter": True,
+            "initial_prompt": os.environ.get("NASS_INITIAL_PROMPT") or None,
+        }
+        if seconds == 0:
+            raw, _ = model.transcribe(str(audio), **kwargs)
+            return to_segments([{"start": s.start, "end": s.end, "text": s.text}
+                                for s in raw])
+        duration = self.check_audio(audio)
+        if duration <= seconds:
+            raw, _ = model.transcribe(str(audio), **kwargs)
+            return to_segments([{"start": s.start, "end": s.end, "text": s.text}
+                                for s in raw])
+        windows = plan_windows(duration, seconds, overlap)
+        collected: list[list[dict]] = []
+        with tempfile.TemporaryDirectory(prefix="nass-asr-") as temp:
+            working = Path(temp)
+            for index, window in enumerate(windows):
+                part = working / f"part-{index:04d}.wav"
+                try:
+                    subprocess.run([
+                        "ffmpeg", "-nostdin", "-y", "-v", "error",
+                        "-ss", f"{window.start:.3f}", "-i", str(audio),
+                        "-t", f"{window.end-window.start:.3f}", "-vn",
+                        "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", str(part),
+                    ], check=True, capture_output=True, timeout=180)
+                    if not part.is_file() or part.stat().st_size < 44:
+                        raise RuntimeError("Empty decoded ASR window")
+                    raw, _ = model.transcribe(str(part), **kwargs)
+                    collected.append(to_segments([
+                        {"start": s.start, "end": s.end, "text": s.text}
+                        for s in raw]))
+                finally:
+                    part.unlink(missing_ok=True)
+        return combine_segments(windows, collected, duration)
 
     def whisper_cpp_asr(self, audio: Path, language: str, work: Path) -> list[dict]:
         binary = os.environ.get("NASS_WHISPER_CPP_BIN", "whisper-cli")
@@ -538,10 +621,15 @@ class Engine:
                     return segments, "cache:" + saved.get("source", "captions")
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
             saved = None
-        for name, fn in (
+        methods = [
             ("youtube-transcript-api", lambda: self.yt_captions(video_id, language)),
             ("yt-dlp-captions", lambda: self.ytdlp_captions(video_id, language, work / "subs")),
-            ("yt-transcript-go", lambda: self.go_captions(video_id, language, work / "go_subs"))):
+            ("yt-transcript-go", lambda: self.go_captions(video_id, language, work / "go_subs")),
+        ]
+        if os.environ.get("NASS_INVIDIOUS_URL"):
+            methods.append(("invidious-operator-configured", lambda: fetch_invidious_captions(
+                video_id, language, parse_vtt)))
+        for name, fn in methods:
             try:
                 segments, provider = fn()
                 if not segments:
@@ -582,15 +670,27 @@ class Engine:
                                           attempts=attempts).to_dict()}
         try:
             audio, audio_source = self.acquire_audio(video_id, work / "audio", attempts)
+            # Capture source provenance BEFORE decoding, then detect any media
+            # mutation during the recognition job. Mock providers without a
+            # real input file remain unbound; they cannot pass review scoring.
+            pre_asr_digest = media_sha256(audio) if audio.is_file() else None
             segments, provider = self.speech_to_text(audio, language, work / "asr", attempts)
+            if pre_asr_digest is not None and media_sha256(audio) != pre_asr_digest:
+                raise ValueError("Source audio changed while ASR was running")
         except Exception as exc:
             if mode == "verify" and captions:
                 result = Result(video_id, captions[1], captions[0], language,
                                 attempts=attempts, verification={"status": "ASR unavailable", "error": safe_error(exc)})
                 return {"ok": True, **result.to_dict()}
             return {"ok": False, "error": safe_error(exc), "video_id": video_id, "attempts": attempts}
+        recognition = recognition_provenance(
+            provider, self.check_audio(audio)
+            if provider == "faster-whisper" and audio.is_file() else None)
+        if pre_asr_digest is not None:
+            recognition["audio_sha256"] = pre_asr_digest
         result = Result(video_id, "asr:"+provider, segments, language,
-                        audio_source=audio_source, attempts=attempts)
+                        audio_source=audio_source, attempts=attempts,
+                        recognition=recognition)
         if mode == "verify" and captions:
             # Never conflate the captions with what was recognized from the sound.
             result.verification = {"captions_source": captions[1], "captions_segments": captions[0],
@@ -601,12 +701,18 @@ class Engine:
         audio = safe_input_audio(name)
         attempts = []
         try:
-            self.check_audio(audio)
+            duration = self.check_audio(audio)
+            pre_asr_digest = media_sha256(audio)
             segments, provider = self.speech_to_text(audio, language,
                                                       workspace or self.root / "file-asr", attempts)
+            if media_sha256(audio) != pre_asr_digest:
+                raise ValueError("Source audio changed while ASR was running")
+            recognition = recognition_provenance(provider, duration)
+            recognition["audio_sha256"] = pre_asr_digest
             return {"ok": True, **Result("local-file", "asr:"+provider, segments,
                                           language, audio_source="authorized-local-file",
-                                          attempts=attempts).to_dict()}
+                                          attempts=attempts,
+                                          recognition=recognition).to_dict()}
         except Exception as exc:
             return {"ok": False, "error": safe_error(exc), "attempts": attempts}
 
@@ -629,10 +735,26 @@ def health() -> dict:
 
 
 def atomic_json(path: Path, payload: dict) -> None:
+    """Crash-safe replacement using a private, unique file in the same directory.
+
+    Concurrent result/status writes must not share a .tmp filename; a crash must
+    never expose a truncated final JSON document to MCP readers.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf-8")
-    temporary.replace(path)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", prefix="." + path.name + ".",
+            suffix=".tmp", dir=path.parent, delete=False
+        ) as handle:
+            temporary = Path(handle.name)
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 class JobStore:
@@ -644,6 +766,7 @@ class JobStore:
         self._pool = ThreadPoolExecutor(max_workers=int(os.environ.get("NASS_WORKERS", "1")))
         self._lock = threading.RLock()
         self._jobs: dict[str, dict] = {}
+        self._futures: dict[str, Any] = {}
 
     def submit_audio_download(self, video: str) -> dict:
         return self.submit(video, "auto", "download_audio")
@@ -667,8 +790,31 @@ class JobStore:
                 raise RuntimeError("Job queue full; retry after a job finishes")
             self._jobs[jobid] = job
             self._save(job)
-        self._pool.submit(self._work, jobid)
+            # Hold the lock until the Future is recorded: the worker cannot
+            # change queued -> running before submission registration.
+            self._futures[jobid] = self._pool.submit(self._work, jobid)
         return job.copy()
+
+    def cancel(self, job_id: str) -> dict:
+        """Cancel a queued job, never forcibly interrupt ffmpeg or model inference.
+
+        Running jobs must complete naturally; forcefully terminating a worker
+        thread could leave partial audio and inconsistent persisted results.
+        """
+        with self._lock:
+            status = self.get_status(job_id)
+            future = self._futures.get(job_id)
+            if status["state"] == "queued" and future is not None and future.cancel():
+                job = self._jobs[job_id]
+                job["state"] = "cancelled"
+                job["finished_at"] = utc_now()
+                job["error"] = "Cancelled before execution"
+                self._save(job)
+                self._jobs.pop(job_id, None)
+                self._futures.pop(job_id, None)
+                return {"job_id": job_id, "cancelled": True, "state": "cancelled"}
+            return {"job_id": job_id, "cancelled": False, "state": status["state"],
+                    "note": "Only queued jobs can be cancelled; running ASR is not interrupted."}
 
     def _save(self, job: dict) -> None:
         atomic_json(self.base / job["job_id"] / "status.json", job)
@@ -710,6 +856,10 @@ class JobStore:
             job["attempts"] = result.get("attempts", [])
             job["error"] = result.get("error")
             self._save(job)
+            # Keep completed history on disk, not in an ever-growing in-memory
+            # table. This also ensures the queue limit counts only live jobs.
+            self._jobs.pop(job_id, None)
+            self._futures.pop(job_id, None)
 
     def get_status(self, job_id: str) -> dict:
         if not re.fullmatch(r"[a-f0-9]{32}", job_id):
@@ -723,6 +873,15 @@ class JobStore:
             job["state"] = "interrupted"
             job["error"] = "Worker restarted before job completion; resubmit."
         return job
+
+    def diagnose(self, job_id: str) -> dict:
+        """Return a privacy-safe summary of provider attempts for any persisted job."""
+        from .failure_analysis import diagnose_attempts
+        status = self.get_status(job_id)
+        result = diagnose_attempts(status.get("attempts", []))
+        result.update({"job_id": job_id, "state": status["state"],
+                       "success_observed": any(a["success"] for a in result["attempts"])})
+        return result
 
     def read(self, job_id: str, start_segment: int = 0, count: int = 70,
              with_timestamps: bool = True) -> dict:

@@ -21,7 +21,7 @@ Netlify exposes `/health` without credentials. `/health` reports **configuration
 | `NASS_BACKEND_URL` | Full `https://<secure-worker-host>/mcp` endpoint, not localhost |
 | `NASS_BACKEND_TOKEN` | Dedicated upstream secret, **secret**; protect upstream with it at the reverse proxy/tunnel |
 
-Never put tokens into `netlify.toml` or your public repository. The backend token must be checked by the worker's outer HTTPS proxy/access layer (the Python MCP app does not yet enforce it itself).
+Never put tokens into `netlify.toml` or your public repository. The Python worker independently validates its dedicated NASS_BACKEND_TOKEN for every POST /mcp using the ProtectedASGI guard. The Netlify gateway validates a different client token; it is NOT a substitute for worker-side authorization. Production deployment must still be tested through authenticated HTTPS.
 
 ## Deploy
 
@@ -61,3 +61,5 @@ Run `netlify deploy --build --prod` from `remote-netlify/`. Check `https://nass-
 MCP client configuration: URL `https://nass-mcp-remote.netlify.app/mcp`, Authorization header `Bearer <NASS_MCP_BEARER_TOKEN>`, transport Streamable HTTP. Verify with the MCP Inspector `tools/list`, then `nass_health`, then a short public YouTube clip with `mode: audio`. Some clients, including ChatGPT account connector flows, require OAuth-based onboarding and may not accept static bearer headers. In that case an OAuth adapter must be added before calling this a connected ChatGPT plugin.
 
 **Cost boundary:** Netlify's free function quota and a temporary Cloudflare tunnel can incur no compulsory subscription, but an always-on host, power and network resources are still needed for local audio ASR. Unavailability of that host is reported as an upstream error, not silently reclassified as successful transcript retrieval.
+
+The current Render service is still deployed from main at v0.3.2; new remote hardening and Docker smoke checks are in PR #2, not production. Consult docs/REMOTE_RENDER_ACCEPTANCE.md in the repository for the release gates. A Netlify ready deploy does not prove upstream reachability or ASR accuracy.

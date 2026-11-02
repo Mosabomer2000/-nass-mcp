@@ -1,0 +1,59 @@
+name: Nass real long-form ASR acceptance
+on:
+  push:
+    branches: [feat/nass-v0501-validation]
+    paths:
+      - 'scripts/longform_acceptance.py'
+      - 'src/nass_mcp/longform.py'
+      - '.github/workflows/longform-asr.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  actual-longform-asr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      NASS_MEDIA_DIR: ${{ github.workspace }}/longform-input
+      NASS_DATA_DIR: ${{ github.workspace }}/longform-data
+      NASS_WHISPER_MODEL: tiny.en
+      NASS_DEVICE: cpu
+      NASS_COMPUTE_TYPE: int8
+      NASS_BEAM_SIZE: '2'
+      NASS_ASR_CHUNK_SECONDS: '20'
+      NASS_ASR_OVERLAP_SECONDS: '4'
+      NASS_ALLOW_EXTERNAL_ASR: '0'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      HF_HUB_DISABLE_PROGRESS_BARS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install FFmpeg and local Whisper ASR
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          python -m pip install -e '.[asr]'
+      - name: Prepare integrity-checked, repeated public-domain speech
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$NASS_MEDIA_DIR"
+          curl --fail --location --silent --show-error --retry 2 \
+            'https://raw.githubusercontent.com/openai/whisper/main/tests/jfk.flac' \
+            --output "$NASS_MEDIA_DIR/jfk.flac"
+          test "$(git hash-object "$NASS_MEDIA_DIR/jfk.flac")" = \
+            'e44b7c13897eae7f78beb220c61fe77429a3961d'
+          ffmpeg -nostdin -y -v error -stream_loop 7 -i "$NASS_MEDIA_DIR/jfk.flac" \
+            -vn -ar 16000 -ac 1 -c:a pcm_s16le "$NASS_MEDIA_DIR/jfk-repeated.wav"
+          ffprobe -v error -show_entries format=duration \
+            -of default=noprint_wrappers=1 "$NASS_MEDIA_DIR/jfk-repeated.wav"
+      - name: Verify true chunked inference and MCP delivery
+        run: python scripts/longform_acceptance.py
+      - name: Save evidence without audio or transcript content
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nass-longform-real-asr
+          path: nass-longform-asr.json
+          if-no-files-found: warn
