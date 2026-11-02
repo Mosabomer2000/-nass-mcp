@@ -44,9 +44,9 @@ async def main():
     duration = engine.check_audio(destination)
     chunk = int(os.environ["NASS_ASR_CHUNK_SECONDS"])
     overlap = float(os.environ["NASS_ASR_OVERLAP_SECONDS"])
-    windows = plan_windows(duration, chunk, overlap)
-    if len(windows) < 3:
-        raise RuntimeError("Arabic sample must use at least three real decoder windows")
+    windows = plan_windows(duration, chunk, overlap) if chunk > 0 else [None]
+    if chunk > 0 and len(windows) < 3:
+        raise RuntimeError("Chunked Arabic sample must use at least three real decoder windows")
     output = await run_acceptance(local_file=destination.name, language="ar",
                                   max_wait_seconds=600)
     output.update({
@@ -55,6 +55,7 @@ async def main():
         "source_clip_count": len(names),
         "duration_seconds": round(duration, 2),
         "planned_windows": len(windows),
+        "processing_mode": "chunked" if chunk > 0 else "single_pass",
         "human_verified_references": 0,
         "reference_rights": "CC BY-SA 4.0",
         "audio_rights": "CC BY 4.0",
