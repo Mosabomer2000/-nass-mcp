@@ -15,6 +15,7 @@ from pathlib import Path
 from nass_mcp.core import Engine, load_whisper_model
 from nass_mcp.host_acceptance import run_acceptance
 from nass_mcp.longform import plan_windows
+from nass_mcp.media_integrity import media_sha256, require_matching_media
 from nass_mcp.seam_review import seam_review_page
 from nass_mcp.server import jobs
 
@@ -68,6 +69,7 @@ async def main():
         "arabic_detected_in_majority_of_samples": ar_count >= 2,
         "human_verified_transcript_exists": False,
         "wer": None, "cer": None,
+        "source_audio_sha256_bound": False,
         "audio_or_transcript_text_in_artifact": False,
     }
     # Proceed only on genuinely Arabic speech. A title alone is not evidence.
@@ -82,6 +84,11 @@ async def main():
             result = json.loads(
                 (jobs.base / output["job_id"] / "result.json").read_text("utf-8"))
             segments = result.get("segments", [])
+            try:
+                require_matching_media(result, media_sha256(path))
+                output["source_audio_sha256_bound"] = True
+            except ValueError:
+                output["source_audio_sha256_bound"] = False
             review = seam_review_page(jobs, output["job_id"], count=20,
                                       include_text=False)
             output["seams"] = review.get("seam_count")
@@ -95,6 +102,7 @@ async def main():
             output["passed"] = bool(output.get("passed") and output["chronological"]
                                     and output["recording_end_covered"]
                                     and output["seam_review_ready"]
+                                    and output["source_audio_sha256_bound"]
                                     and output["seams"] == len(windows)-1)
     report = Path("nass-natural-arabic-30min-evidence.json")
     report.write_text(json.dumps(output, ensure_ascii=False, indent=2), "utf-8")
