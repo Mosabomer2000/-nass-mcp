@@ -21,11 +21,6 @@ def test_unwrap_fails_closed_on_invalid_payload():
         unwrap(SimpleNamespace(structured_content={"random":"text"},content=[]))
 
 
-@pytest.mark.asyncio
-async def _unused():
-    pass
-
-
 def test_host_acceptance_rejects_untrusted_video_url_before_io():
     import asyncio
     with pytest.raises(ValueError):
