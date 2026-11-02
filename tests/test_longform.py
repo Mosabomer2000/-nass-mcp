@@ -95,3 +95,16 @@ def test_short_clip_stays_on_previous_one_pass_path(tmp_path, monkeypatch):
                     "-ac", "1", str(audio)], check=True)
     out = core.Engine(tmp_path).faster_whisper_asr(audio, "ar")
     assert out[0]["text"] == "واحد"
+
+
+def test_ownership_clamps_segments_spanning_both_sides_of_seam():
+    windows = plan_windows(10, 6, 2)
+    first = [{"start": 3.7, "end": 5.5, "text": "قبل الحد"}]
+    second = [{"start": 0.0, "end": 3.2, "text": "بعد الحد"}]
+    segments = combine_segments(windows, [first, second], 10)
+    assert len(segments) == 2
+    assert segments[0]["start"] <= segments[1]["start"]
+    assert segments[0]["end"] <= segments[1]["start"]
+    assert segments[0]["end"] == 5.0
+    assert segments[1]["start"] == 5.0
+    assert [x["text"] for x in segments] == ["قبل الحد", "بعد الحد"]
