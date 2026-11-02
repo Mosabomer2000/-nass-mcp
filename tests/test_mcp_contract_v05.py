@@ -12,3 +12,13 @@ def test_acquisition_report_is_discoverable_and_callable():
             serialized = " ".join(getattr(item, "text", "") for item in result.content)
             assert "invidious" in serialized or bool(result.structured_content)
     asyncio.run(check())
+
+
+def test_transcript_and_diagnostic_tools_register_in_mcp():
+    async def check():
+        async with Client(mcp, raise_exceptions=True) as client:
+            tools = await client.list_tools()
+            names = {tool.name for tool in tools}
+            assert {"nass_transcript_page", "nass_verification_page",
+                    "nass_quality_report", "nass_job_diagnostics"}.issubset(names)
+    asyncio.run(check())
