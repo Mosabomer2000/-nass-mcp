@@ -5,7 +5,7 @@ No API, uploads, network traffic, or automatic reference transcription.
 Requires the original EXACT bytes used for ASR and a source-bound result.json.
 
 Examples:
-  python scripts/prepare_human_audit.py \
+  python -m scripts.prepare_human_audit \
     --audio "$NASS_MEDIA_DIR/lecture.flac" \
     --result "$NASS_DATA_DIR/jobs/JOB_ID/result.json" \
     --output-dir "$HOME/nass-private-review-001"
