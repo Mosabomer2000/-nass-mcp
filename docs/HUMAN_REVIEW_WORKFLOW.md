@@ -78,3 +78,5 @@ identifiable voices; keep the folder off public repositories, shared mounts,
 and public CI artifacts. The audio remains subject to its original licence.
 This export does not attest human review, certify transcription accuracy,
 or change the remaining YouTube-acquisition release gate.
+
+Audit-group integrity: the scorer now checks the stored decoder-window plan. A row labelled `decoder_seam` must actually contain a decoder seam, and an `interior_control` row must not contain one. Mislabelled intervals are excluded rather than inflating a seam/control comparison. These automated checks do not establish that a reviewer actually listened.
