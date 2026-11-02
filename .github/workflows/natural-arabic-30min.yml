@@ -1,0 +1,47 @@
+name: Nass natural thirty-minute Arabic audio acceptance
+on:
+  push:
+    branches: [feat/nass-v0501-validation]
+    paths:
+      - 'scripts/fetch_commons_conversation.py'
+      - 'scripts/natural_arabic_acceptance.py'
+      - '.github/workflows/natural-arabic-30min.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  natural-30min:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NASS_MEDIA_DIR: ${{ github.workspace }}/natural-arabic-media
+      NASS_DATA_DIR: ${{ github.workspace }}/natural-arabic-jobs
+      NASS_WHISPER_MODEL: small
+      NASS_DEVICE: cpu
+      NASS_COMPUTE_TYPE: int8
+      NASS_BEAM_SIZE: '3'
+      NASS_ASR_CHUNK_SECONDS: '480'
+      NASS_ASR_OVERLAP_SECONDS: '4'
+      NASS_ALLOW_EXTERNAL_ASR: '0'
+      HF_HUB_DISABLE_PROGRESS_BARS: '1'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install FFmpeg and offline transcription engine
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          python -m pip install -e '.[asr]'
+      - name: Download and SHA-1 verify the CC BY-SA Wikimedia source
+        run: python scripts/fetch_commons_conversation.py
+      - name: Detect spoken Arabic, transcribe natural 30-min recording, review seams
+        run: python scripts/natural_arabic_acceptance.py
+      - name: Upload only redacted performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nass-commons-natural-arabic-30min
+          path: nass-natural-arabic-30min-evidence.json
+          if-no-files-found: warn
