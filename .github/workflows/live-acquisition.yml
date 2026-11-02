@@ -1,0 +1,31 @@
+name: Nass public-video acquisition probe
+on:
+  push:
+    branches:
+      - feat/nass-v0501-validation
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install FFmpeg and extractors
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          python -m pip install -e '.[captions,audio]'
+      - name: Probe one public short YouTube video, no cookies or secrets
+        continue-on-error: true
+        run: timeout 210s python scripts/acquisition_probe_v05.py
+      - name: Save evidence even on media failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nass-live-acquisition-evidence
+          path: nass-live-acquisition.json
+          if-no-files-found: warn
