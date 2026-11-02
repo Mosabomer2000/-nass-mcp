@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from typing import Callable, Any
 from urllib.parse import urlparse, parse_qs
 from .acquisition_v05 import fetch_invidious_captions
+from .media_integrity import media_sha256
 from uuid import uuid4
 
 ROOT = Path(os.environ.get("NASS_DATA_DIR", Path.home() / ".cache" / "nass-mcp")).expanduser().resolve()
@@ -669,18 +670,27 @@ class Engine:
                                           attempts=attempts).to_dict()}
         try:
             audio, audio_source = self.acquire_audio(video_id, work / "audio", attempts)
+            # Capture source provenance BEFORE decoding, then detect any media
+            # mutation during the recognition job. Mock providers without a
+            # real input file remain unbound; they cannot pass review scoring.
+            pre_asr_digest = media_sha256(audio) if audio.is_file() else None
             segments, provider = self.speech_to_text(audio, language, work / "asr", attempts)
+            if pre_asr_digest is not None and media_sha256(audio) != pre_asr_digest:
+                raise ValueError("Source audio changed while ASR was running")
         except Exception as exc:
             if mode == "verify" and captions:
                 result = Result(video_id, captions[1], captions[0], language,
                                 attempts=attempts, verification={"status": "ASR unavailable", "error": safe_error(exc)})
                 return {"ok": True, **result.to_dict()}
             return {"ok": False, "error": safe_error(exc), "video_id": video_id, "attempts": attempts}
+        recognition = recognition_provenance(
+            provider, self.check_audio(audio)
+            if provider == "faster-whisper" and audio.is_file() else None)
+        if pre_asr_digest is not None:
+            recognition["audio_sha256"] = pre_asr_digest
         result = Result(video_id, "asr:"+provider, segments, language,
                         audio_source=audio_source, attempts=attempts,
-                        recognition=recognition_provenance(
-                            provider, self.check_audio(audio)
-                            if provider == "faster-whisper" and audio.is_file() else None))
+                        recognition=recognition)
         if mode == "verify" and captions:
             # Never conflate the captions with what was recognized from the sound.
             result.verification = {"captions_source": captions[1], "captions_segments": captions[0],
@@ -692,13 +702,17 @@ class Engine:
         attempts = []
         try:
             duration = self.check_audio(audio)
+            pre_asr_digest = media_sha256(audio)
             segments, provider = self.speech_to_text(audio, language,
                                                       workspace or self.root / "file-asr", attempts)
+            if media_sha256(audio) != pre_asr_digest:
+                raise ValueError("Source audio changed while ASR was running")
+            recognition = recognition_provenance(provider, duration)
+            recognition["audio_sha256"] = pre_asr_digest
             return {"ok": True, **Result("local-file", "asr:"+provider, segments,
                                           language, audio_source="authorized-local-file",
                                           attempts=attempts,
-                                          recognition=recognition_provenance(
-                                              provider, duration)).to_dict()}
+                                          recognition=recognition).to_dict()}
         except Exception as exc:
             return {"ok": False, "error": safe_error(exc), "attempts": attempts}
 
