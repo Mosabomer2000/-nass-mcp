@@ -4,6 +4,8 @@ on:
     branches: [feat/nass-v0501-validation]
     paths:
       - 'scripts/asr_acceptance.py'
+      - 'scripts/host_acceptance.py'
+      - 'src/nass_mcp/host_acceptance.py'
       - '.github/workflows/asr-acceptance.yml'
   workflow_dispatch:
 permissions:
@@ -44,10 +46,17 @@ jobs:
           ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 "$NASS_MEDIA_DIR/jfk.flac"
       - name: Run real audio through the MCP SDK and local Whisper model
         run: python scripts/asr_acceptance.py
+      - name: Validate operator-owned MCP host acceptance on actual audio
+        run: |
+          python scripts/host_acceptance.py \
+            --local-file jfk.flac --language en --max-wait 180 \
+            --output nass-host-acceptance.json
       - name: Preserve acceptance result even on errors
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nass-real-audio-asr-acceptance
-          path: nass-asr-acceptance.json
+          path: |
+            nass-asr-acceptance.json
+            nass-host-acceptance.json
           if-no-files-found: warn
