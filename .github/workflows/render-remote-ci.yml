@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: nass-render-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: nass-render-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -39,6 +39,18 @@ jobs:
           python-version: "3.11"
       - name: Build the exact production Dockerfile without deploying
         run: docker build --pull --tag nass-render-smoke .
+      - name: Reject startup without worker token
+        run: |
+          set +e
+          timeout 20s docker run --rm nass-render-smoke > /tmp/nass-no-token.log 2>&1
+          exit_status=$?
+          set -e
+          if [ "$exit_status" -eq 0 ] || [ "$exit_status" -eq 124 ]; then
+            echo "Unsafe: container failed to reject missing credentials"
+            exit 1
+          fi
+          grep -q 'NASS_BACKEND_TOKEN is required' /tmp/nass-no-token.log
+          rm -f /tmp/nass-no-token.log
       - name: Start a loopback-only test worker
         run: |
           docker run --detach --rm --name nass-render-ci \
