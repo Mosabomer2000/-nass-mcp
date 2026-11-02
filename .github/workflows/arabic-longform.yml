@@ -1,0 +1,47 @@
+name: Nass real Arabic multi-window ASR acceptance
+on:
+  push:
+    branches: [feat/nass-v0501-validation]
+    paths:
+      - 'scripts/arabic_longform_acceptance.py'
+      - '.github/workflows/arabic-longform.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  arabic-longform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NASS_MEDIA_DIR: ${{ github.workspace }}/nass-arabic-longform-input
+      NASS_DATA_DIR: ${{ github.workspace }}/nass-arabic-longform-data
+      NASS_WHISPER_MODEL: small
+      NASS_DEVICE: cpu
+      NASS_COMPUTE_TYPE: int8
+      NASS_BEAM_SIZE: '3'
+      NASS_ASR_CHUNK_SECONDS: '20'
+      NASS_ASR_OVERLAP_SECONDS: '4'
+      NASS_ARABIC_SAMPLES: '10'
+      NASS_ALLOW_EXTERNAL_ASR: '0'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      HF_HUB_DISABLE_PROGRESS_BARS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install free CPU ASR and FFmpeg
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          python -m pip install -e '.[asr]'
+      - name: Fetch and checksum-check ten licensed Arabic test clips
+        run: python scripts/get_arabic_fixture.py
+      - name: Run true Arabic multi-window recognition through MCP
+        run: python scripts/arabic_longform_acceptance.py
+      - name: Store redacted metrics (no recordings or transcript text)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nass-arabic-longform-evidence
+          path: nass-arabic-longform-report.json
+          if-no-files-found: warn
