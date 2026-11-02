@@ -443,13 +443,61 @@ class Engine:
         return duration
 
     def faster_whisper_asr(self, audio: Path, language: str) -> list[dict]:
+        """Transcribe short clips as before, but bound memory for long audio.
+
+        Each long-form window is decoded independently, while the model is loaded
+        once. Adjacent windows overlap and each timestamp belongs to exactly one
+        window's midpoint interval; raw audio and intermediate WAVs are removed
+        when the temporary directory closes. Never return a partially successful
+        long-form transcript if a chunk fails.
+        """
+        from .longform import plan_windows, combine_segments
         model_name = os.environ.get("NASS_WHISPER_MODEL", "small")
         model = load_whisper_model(model_name, os.environ.get("NASS_DEVICE", "cpu"),
                                    os.environ.get("NASS_COMPUTE_TYPE", "int8"))
-        segments, _ = model.transcribe(str(audio), language=None if language in ("auto", "") else language,
-                                       beam_size=max(1, min(5, int(os.environ.get("NASS_BEAM_SIZE", "5")))), vad_filter=True,
-                                       initial_prompt=os.environ.get("NASS_INITIAL_PROMPT") or None)
-        return to_segments([{"start": s.start, "end": s.end, "text": s.text} for s in segments])
+        seconds = int(os.environ.get("NASS_ASR_CHUNK_SECONDS", "480"))
+        overlap = float(os.environ.get("NASS_ASR_OVERLAP_SECONDS", "4"))
+        if seconds < 0 or seconds > 1800:
+            raise ValueError("NASS_ASR_CHUNK_SECONDS must be 0..1800")
+        if not 0 <= overlap <= 30:
+            raise ValueError("NASS_ASR_OVERLAP_SECONDS must be 0..30")
+        kwargs = {
+            "language": None if language in ("auto", "") else language,
+            "beam_size": max(1, min(5, int(os.environ.get("NASS_BEAM_SIZE", "5")))),
+            "vad_filter": True,
+            "initial_prompt": os.environ.get("NASS_INITIAL_PROMPT") or None,
+        }
+        if seconds == 0:
+            raw, _ = model.transcribe(str(audio), **kwargs)
+            return to_segments([{"start": s.start, "end": s.end, "text": s.text}
+                                for s in raw])
+        duration = self.check_audio(audio)
+        if duration <= seconds:
+            raw, _ = model.transcribe(str(audio), **kwargs)
+            return to_segments([{"start": s.start, "end": s.end, "text": s.text}
+                                for s in raw])
+        windows = plan_windows(duration, seconds, overlap)
+        collected: list[list[dict]] = []
+        with tempfile.TemporaryDirectory(prefix="nass-asr-") as temp:
+            working = Path(temp)
+            for index, window in enumerate(windows):
+                part = working / f"part-{index:04d}.wav"
+                try:
+                    subprocess.run([
+                        "ffmpeg", "-nostdin", "-y", "-v", "error",
+                        "-ss", f"{window.start:.3f}", "-i", str(audio),
+                        "-t", f"{window.end-window.start:.3f}", "-vn",
+                        "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", str(part),
+                    ], check=True, capture_output=True, timeout=180)
+                    if not part.is_file() or part.stat().st_size < 44:
+                        raise RuntimeError("Empty decoded ASR window")
+                    raw, _ = model.transcribe(str(part), **kwargs)
+                    collected.append(to_segments([
+                        {"start": s.start, "end": s.end, "text": s.text}
+                        for s in raw]))
+                finally:
+                    part.unlink(missing_ok=True)
+        return combine_segments(windows, collected, duration)
 
     def whisper_cpp_asr(self, audio: Path, language: str, work: Path) -> list[dict]:
         binary = os.environ.get("NASS_WHISPER_CPP_BIN", "whisper-cli")
