@@ -104,3 +104,23 @@ def test_deterministic_interior_controls_do_not_overlap_seams():
 def test_invalid_control_counts_fail_closed(bad):
     with pytest.raises(ValueError):
         review_template(result(), DIGEST, control_intervals=bad)
+
+
+def test_seam_and_interior_control_accuracy_are_separately_reported():
+    rows = [
+        {"id": "seam-sample", "kind": "decoder_seam",
+         "start_seconds": 12, "end_seconds": 23,
+         "audio_sha256": DIGEST,
+         "reference_text": "العلم النافع العمل الصالح",
+         "review_state": "human_checked", "reviewer_attestation": True},
+        {"id": "control-sample", "kind": "interior_control",
+         "start_seconds": 32, "end_seconds": 38,
+         "audio_sha256": DIGEST, "reference_text": "الإخلاص",
+         "review_state": "human_checked", "reviewer_attestation": True},
+    ]
+    out = evaluate_reviews(result(), rows, DIGEST)
+    groups = out["metrics_by_review_kind"]
+    assert groups["decoder_seam"]["micro_wer"] == 0
+    assert groups["interior_control"]["micro_wer"] == 1
+    assert groups["custom"]["micro_wer"] is None
+    assert out["full_recording_wer"] is None
