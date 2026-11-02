@@ -13,6 +13,7 @@ import re
 import shutil
 import time
 import subprocess
+import tempfile
 import threading
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -639,10 +640,26 @@ def health() -> dict:
 
 
 def atomic_json(path: Path, payload: dict) -> None:
+    """Crash-safe replacement using a private, unique file in the same directory.
+
+    Concurrent result/status writes must not share a .tmp filename; a crash must
+    never expose a truncated final JSON document to MCP readers.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf-8")
-    temporary.replace(path)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", prefix="." + path.name + ".",
+            suffix=".tmp", dir=path.parent, delete=False
+        ) as handle:
+            temporary = Path(handle.name)
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 class JobStore:
@@ -654,6 +671,7 @@ class JobStore:
         self._pool = ThreadPoolExecutor(max_workers=int(os.environ.get("NASS_WORKERS", "1")))
         self._lock = threading.RLock()
         self._jobs: dict[str, dict] = {}
+        self._futures: dict[str, Any] = {}
 
     def submit_audio_download(self, video: str) -> dict:
         return self.submit(video, "auto", "download_audio")
@@ -677,8 +695,31 @@ class JobStore:
                 raise RuntimeError("Job queue full; retry after a job finishes")
             self._jobs[jobid] = job
             self._save(job)
-        self._pool.submit(self._work, jobid)
+            # Hold the lock until the Future is recorded: the worker cannot
+            # change queued -> running before submission registration.
+            self._futures[jobid] = self._pool.submit(self._work, jobid)
         return job.copy()
+
+    def cancel(self, job_id: str) -> dict:
+        """Cancel a queued job, never forcibly interrupt ffmpeg or model inference.
+
+        Running jobs must complete naturally; forcefully terminating a worker
+        thread could leave partial audio and inconsistent persisted results.
+        """
+        with self._lock:
+            status = self.get_status(job_id)
+            future = self._futures.get(job_id)
+            if status["state"] == "queued" and future is not None and future.cancel():
+                job = self._jobs[job_id]
+                job["state"] = "cancelled"
+                job["finished_at"] = utc_now()
+                job["error"] = "Cancelled before execution"
+                self._save(job)
+                self._jobs.pop(job_id, None)
+                self._futures.pop(job_id, None)
+                return {"job_id": job_id, "cancelled": True, "state": "cancelled"}
+            return {"job_id": job_id, "cancelled": False, "state": status["state"],
+                    "note": "Only queued jobs can be cancelled; running ASR is not interrupted."}
 
     def _save(self, job: dict) -> None:
         atomic_json(self.base / job["job_id"] / "status.json", job)
@@ -720,6 +761,10 @@ class JobStore:
             job["attempts"] = result.get("attempts", [])
             job["error"] = result.get("error")
             self._save(job)
+            # Keep completed history on disk, not in an ever-growing in-memory
+            # table. This also ensures the queue limit counts only live jobs.
+            self._jobs.pop(job_id, None)
+            self._futures.pop(job_id, None)
 
     def get_status(self, job_id: str) -> dict:
         if not re.fullmatch(r"[a-f0-9]{32}", job_id):

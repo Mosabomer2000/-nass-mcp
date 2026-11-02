@@ -67,6 +67,15 @@ def nass_job_status(job_id: str) -> dict:
 
 
 @mcp.tool()
+def nass_cancel_job(job_id: str) -> dict:
+    """Cancel a queued transcription before it starts; do not kill running ASR."""
+    try:
+        return jobs.cancel(job_id)
+    except Exception as exc:
+        return {"ok": False, "error": safe_error(exc)}
+
+
+@mcp.tool()
 def nass_job_diagnostics(job_id: str) -> dict:
     """Classify a job's observed provider failures without returning raw error messages."""
     try:
