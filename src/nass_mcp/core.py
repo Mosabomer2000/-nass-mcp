@@ -677,7 +677,8 @@ class Engine:
         result = Result(video_id, "asr:"+provider, segments, language,
                         audio_source=audio_source, attempts=attempts,
                         recognition=recognition_provenance(
-                            provider, self.check_audio(audio) if provider == "faster-whisper" else None))
+                            provider, self.check_audio(audio)
+                            if provider == "faster-whisper" and audio.is_file() else None))
         if mode == "verify" and captions:
             # Never conflate the captions with what was recognized from the sound.
             result.verification = {"captions_source": captions[1], "captions_segments": captions[0],
