@@ -20,7 +20,6 @@ jobs:
           sudo apt-get update && sudo apt-get install -y ffmpeg
           python -m pip install -e '.[captions,audio]'
       - name: Probe one public short YouTube video, no cookies or secrets
-        continue-on-error: true
         run: timeout 210s python scripts/acquisition_probe_v05.py
       - name: Save evidence even on media failure
         if: always()
