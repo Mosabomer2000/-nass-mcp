@@ -11,7 +11,7 @@ permissions:
 jobs:
   nahw-evaluation:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     env:
       NASS_MEDIA_DIR: ${{ github.workspace }}/nahw-input
       NASS_DATA_DIR: ${{ github.workspace }}/nahw-results
@@ -31,14 +31,14 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
           python -m pip install -e '.[asr]'
-      - name: Acquire ten human-reviewed Arabic references from the open dataset
+      - name: Acquire forty human-reviewed Arabic references from the open dataset
         run: python scripts/get_nahw_fixture.py
       - name: Compare actual model audio transcripts with reviewed reference text
         run: |
           python scripts/arabic_asr_benchmark.py \
             --manifest nass-nahw-eval.jsonl \
             --output nass-nahw-asr-report.json \
-            --max-samples 10 --policy arabic_basic
+            --max-samples 40 --policy arabic_basic
       - name: Preserve metrics only; do not upload speech or references
         if: always()
         uses: actions/upload-artifact@v4
