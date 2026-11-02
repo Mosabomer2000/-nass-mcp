@@ -80,3 +80,37 @@ This export does not attest human review, certify transcription accuracy,
 or change the remaining YouTube-acquisition release gate.
 
 Audit-group integrity: the scorer now checks the stored decoder-window plan. A row labelled `decoder_seam` must actually contain a decoder seam, and an `interior_control` row must not contain one. Mislabelled intervals are excluded rather than inflating a seam/control comparison. These automated checks do not establish that a reviewer actually listened.
+
+
+## Browser-based offline listening and annotation (new)
+
+After \`scripts/export_review_clips.py\` completes, open
+\`$HOME/private-nass-clips-001/review.html\` in a browser on the **same machine**.
+This is a standalone HTML file; there is no server, CDN, user account, or API
+request. It offers each exact-audio WAV clip, its source time range, an Arabic
+transcription input field, and an unchecked **human-listening attestation**.
+It does NOT embed any original ASR words or prefill a supposed reference.
+
+For each clip:
+1. Listen to the WAV (multiple times if necessary).
+2. Type precisely the audible words; leave uncertain passages unverified.
+3. Check the explicit attestation only for audio you actually reviewed.
+4. Press **تصدير ملف المراجعة JSONL** to download \`nass-reviewed.jsonl\`.
+
+The export contains verified rows only when the review checkbox is marked
+**and** the reference is nonempty. All other rows remain pending and do not
+enter WER/CER. Score using the generated file:
+
+    python scripts/manual_audio_review.py score \
+      --result "$NASS_DATA_DIR/jobs/JOB_ID/result.json" \
+      --audio "$NASS_MEDIA_DIR/lecture.flac" \
+      --manifest "$HOME/Downloads/nass-reviewed.jsonl" \
+      --output "$HOME/private-nass-review-scores.json"
+
+The download location varies by browser. Saving the JSONL is an explicit
+manual action; browser reloads erase unsaved text. The HTML and its index
+contain only identifier/timestamp/digest metadata. **Neither the UI nor its
+exports certify that listening actually occurred**; attestation relies on
+reviewer honesty. All WAV clips and generated JSONL are confidential unless
+the source licence and recorded speakers' rights permit sharing. Do not open
+this private review folder from a remotely synchronized or shared drive.
