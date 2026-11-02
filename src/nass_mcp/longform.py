@@ -76,6 +76,16 @@ def combine_segments(windows: list[Window], hypotheses: list[list[dict]],
                 continue
             if midpoint == window.own_until and window.own_until < duration:
                 continue  # exact ownership seam belongs to the next window
+            # Overlap segments may stretch across two adjacent decoder windows.
+            # Clamp *metadata* to the unique ownership interval while keeping
+            # every recognized word exactly as returned by the ASR engine.
+            start = max(start, window.own_from)
+            end = min(end, window.own_until)
+            if end <= start:
+                continue
             result.append({"start": round(start, 3), "end": round(end, 3),
                            "text": content})
+    # A few ASR engines emit nonchronological segments even within one window.
+    # Sorting does not invent words; preserve the original timing evidence.
+    result.sort(key=lambda item: (item["start"], item["end"]))
     return result
