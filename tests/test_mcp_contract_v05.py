@@ -17,10 +17,12 @@ def test_acquisition_report_is_discoverable_and_callable():
 def test_transcript_and_diagnostic_tools_register_in_mcp():
     async def check():
         async with Client(mcp, raise_exceptions=True) as client:
-            tools = await client.list_tools()
-            # MCP SDK 2.x returns (name, description/tool) tuples here.
-            names = {item[0] if isinstance(item, tuple) else
-                     getattr(item, "name", str(item)) for item in tools}
+            listing = await client.list_tools()
+            # Current MCP SDK returns a structured listing with a "tools" collection.
+            tools = listing.get("tools", []) if isinstance(listing, dict) else getattr(listing, "tools", listing)
+            names = {item.get("name") if isinstance(item, dict) else
+                     (item[0] if isinstance(item, tuple) else getattr(item, "name", str(item)))
+                     for item in tools}
             assert {"nass_transcript_page", "nass_verification_page",
                     "nass_quality_report", "nass_job_diagnostics"}.issubset(names)
     asyncio.run(check())
