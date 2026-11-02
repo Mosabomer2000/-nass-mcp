@@ -73,3 +73,45 @@ Do not upload private annotation manifests publicly.
 The 30-minute Wikimedia test bypasses YouTube to evaluate ASR; it
 **does not resolve the YouTube source-access obstacle** on GitHub
 or the production Render instance.
+
+## Verified real run — 2026-11-02
+
+GitHub Actions:
+https://github.com/Mosabomer2000/-nass-mcp/actions/runs/41512718220
+
+**SUCCESS** on the first 30 minutes of the complete, checksum-verified natural
+Commons recording. The test did not use YouTube, paid API, or a mock ASR engine.
+
+| Measurement | Observed |
+|---|---:|
+| Audio duration | 1800.0 s |
+| Whisper model | small, CPU/int8, beam 3 |
+| Chunk size/overlap | 480 s / 4 s |
+| Decoder windows | 4 |
+| Output speech segments | 560 |
+| Original transcript characters | 25,735 |
+| Original audio-to-MCP acceptance elapsed | 478.26 s |
+| Structural timestamp anomalies | 0 |
+| Distinct decoder-window seams for human review | 3 |
+| Parent process peak RSS since process start | 1806.98 MB |
+| Word-error rate / character-error rate | **not measured** |
+
+**Language detection matters:** the source is *not fully Arabic*.
+Three separate samples (offsets 90, 660 and 1250 seconds) were classified
+respectively **Arabic (0.8114)**, **Arabic (0.8940)** and
+**English (0.9165)** by the model's audio-language detector.
+This proves a successful **natural bilingual Arabic/English discussion**
+under an Arabic language hint; it does not prove 30 minutes of purely
+Arabic speech or that English code-switching was transcribed accurately.
+
+The RSS value is a lifetime high-water mark from this particular Linux
+worker, not a hard requirement or a per-job incremental footprint.
+The recording and ASR text were not published as CI artifacts.
+A complete human-aligned reference transcript was not available, so
+WER/CER remain null rather than fabricated. The three seams still require
+listening and correction where appropriate.
+
+The run validates audio transcription, real MCP job completion,
+paginated delivery, chronological timestamps, structural QA,
+and seam-review access in a continuous natural recording; it does **not**
+validate YouTube source acquisition.
