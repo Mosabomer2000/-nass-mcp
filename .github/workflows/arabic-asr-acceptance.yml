@@ -12,10 +12,14 @@ jobs:
   arabic-asr:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ['base', 'small']
     env:
       NASS_MEDIA_DIR: ${{ github.workspace }}/nass-arabic-fixtures
       NASS_DATA_DIR: ${{ github.workspace }}/nass-arabic-work
-      NASS_WHISPER_MODEL: base
+      NASS_WHISPER_MODEL: ${{ matrix.model }}
       NASS_DEVICE: cpu
       NASS_COMPUTE_TYPE: int8
       NASS_BEAM_SIZE: '3'
@@ -44,6 +48,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nass-one-sample-arabic-asr
+          name: nass-ten-sample-arabic-asr-${{ matrix.model }}
           path: nass-arabic-asr-report.json
           if-no-files-found: warn
