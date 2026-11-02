@@ -734,6 +734,15 @@ class JobStore:
             job["error"] = "Worker restarted before job completion; resubmit."
         return job
 
+    def diagnose(self, job_id: str) -> dict:
+        """Return a privacy-safe summary of provider attempts for any persisted job."""
+        from .failure_analysis import diagnose_attempts
+        status = self.get_status(job_id)
+        result = diagnose_attempts(status.get("attempts", []))
+        result.update({"job_id": job_id, "state": status["state"],
+                       "success_observed": any(a["success"] for a in result["attempts"])})
+        return result
+
     def read(self, job_id: str, start_segment: int = 0, count: int = 70,
              with_timestamps: bool = True) -> dict:
         status = self.get_status(job_id)
