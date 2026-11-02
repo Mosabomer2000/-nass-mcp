@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .benchmark import score, aggregate
 from .longform import plan_windows
+from .media_integrity import require_matching_media
 
 
 def file_digest(path: Path) -> str:
@@ -51,6 +52,7 @@ def review_template(result: dict, audio_sha256: str,
                     control_intervals: int = 0) -> list[dict]:
     """Prepare a LOCAL, unreviewed annotation form for actual seam intervals."""
     segments, duration = validate_result(result)
+    require_matching_media(result, audio_sha256)
     if not isinstance(audio_sha256, str) or len(audio_sha256) != 64:
         raise ValueError("Missing input audio SHA256")
     if type(limit) is not int or not 1 <= limit <= 100:
@@ -126,6 +128,7 @@ def evaluate_reviews(result: dict, rows: list[dict], audio_sha256: str) -> dict:
     WER/CER comparison because the model did not emit word-level alignment.
     """
     segments, duration = validate_result(result)
+    require_matching_media(result, audio_sha256)
     # Audited group labels must agree with the model's stored window plan.
     # Otherwise moving an easy sample into the seam group can fabricate a
     # misleading seam-vs-control comparison.
