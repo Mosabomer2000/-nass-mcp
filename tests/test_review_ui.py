@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -68,3 +70,14 @@ def test_page_does_not_embed_reference_or_model_words():
     html = render_review_html([row], "c" * 64)
     assert "SECRET_HUMAN_REFERENCE" not in html
     assert "SECRET_ASR_OUTPUT" not in html
+
+
+def test_embedded_browser_javascript_syntax_with_node_if_installed(tmp_path):
+    if not shutil.which("node"):
+        pytest.skip("Node.js is not available; HTML is still checked as text")
+    html = render_review_html(clips(), "d" * 64)
+    scripts = re.findall(r"<script>(.*?)</script>", html, flags=re.S)
+    assert len(scripts) == 1
+    source = tmp_path / "nass-review-ui.js"
+    source.write_text(scripts[0], encoding="utf-8")
+    subprocess.run(["node", "--check", str(source)], check=True, timeout=15)
