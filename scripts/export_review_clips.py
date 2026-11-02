@@ -15,6 +15,7 @@ import shutil
 import subprocess
 
 from nass_mcp.manual_review import file_digest, validate_result
+from nass_mcp.review_ui import render_review_html
 
 MAX_CLIPS = 200
 MAX_CLIP_SECONDS = 180.0
@@ -129,6 +130,9 @@ def export_review_clips(audio: Path, result: dict, rows: list[dict],
         index_file = dest / "index.json"
         index_file.write_text(json.dumps(index, ensure_ascii=False, indent=2), "utf-8")
         os.chmod(index_file, 0o600)
+        page = dest / "review.html"
+        page.write_text(render_review_html(intervals, digest), "utf-8")
+        os.chmod(page, 0o600)
     except Exception:
         shutil.rmtree(dest)
         raise
@@ -136,6 +140,7 @@ def export_review_clips(audio: Path, result: dict, rows: list[dict],
         "status": "private_audio_clips_prepared",
         "clip_count": len(intervals),
         "local_output_directory": str(dest),
+        "review_page": str(dest / "review.html"),
         "human_review_completed": False,
         "transcript_text_exported": False,
     }
