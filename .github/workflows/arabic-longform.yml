@@ -12,6 +12,14 @@ jobs:
   arabic-longform:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: chunked
+            chunk: '20'
+          - mode: single_pass
+            chunk: '0'
     env:
       NASS_MEDIA_DIR: ${{ github.workspace }}/nass-arabic-longform-input
       NASS_DATA_DIR: ${{ github.workspace }}/nass-arabic-longform-data
@@ -19,7 +27,7 @@ jobs:
       NASS_DEVICE: cpu
       NASS_COMPUTE_TYPE: int8
       NASS_BEAM_SIZE: '3'
-      NASS_ASR_CHUNK_SECONDS: '20'
+      NASS_ASR_CHUNK_SECONDS: ${{ matrix.chunk }}
       NASS_ASR_OVERLAP_SECONDS: '4'
       NASS_ARABIC_SAMPLES: '10'
       NASS_ALLOW_EXTERNAL_ASR: '0'
@@ -42,6 +50,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nass-arabic-longform-evidence
+          name: nass-arabic-longform-evidence-${{ matrix.mode }}
           path: nass-arabic-longform-report.json
           if-no-files-found: warn
