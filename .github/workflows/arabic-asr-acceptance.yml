@@ -19,6 +19,7 @@ jobs:
       NASS_DEVICE: cpu
       NASS_COMPUTE_TYPE: int8
       NASS_BEAM_SIZE: '3'
+      NASS_ARABIC_SAMPLES: '10'
       NASS_ALLOW_EXTERNAL_ASR: '0'
       HF_HUB_DISABLE_TELEMETRY: '1'
       HF_HUB_DISABLE_PROGRESS_BARS: '1'
@@ -38,7 +39,7 @@ jobs:
           python scripts/arabic_asr_benchmark.py \
             --manifest nass-arabic-eval.jsonl \
             --output nass-arabic-asr-report.json \
-            --max-samples 1 --policy arabic_basic
+            --max-samples 10 --policy arabic_basic
       - name: Save metrics and provenance; do not redistribute the audio sample
         if: always()
         uses: actions/upload-artifact@v4
