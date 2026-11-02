@@ -130,3 +130,31 @@ used for inference. Its published report contains only a boolean
 `source_audio_sha256_bound`, not the media or recognized words.
 A cryptographically bound ASR job is eligible for private human annotation;
 actual human listening remains a separate, unfinished step.
+
+
+## 2026-11-02 completed source-bound re-run
+
+GitHub Actions run 41526598261 completed successfully on the real 30-minute
+Wikimedia conversation recording with a recognized-source SHA256 match.
+Whisper produced 488 chronological segments via four 480-second windows,
+three decoder seams, 24,608 transcript characters, no structural anomalies,
+and an observed lifetime peak RSS near 1,760.73 MB.
+End-to-end wall time was 571.47 seconds on that particular CI runner.
+These are operational observations, not audio accuracy percentages.
+Three detection windows included two Arabic and one English, so the material
+is MIXED-LANGUAGE and is NOT a full continuous Arabic scholarly lecture.
+There is no independent reviewed reference, so WER and CER remain NULL.
+Only redacted evidence was uploaded; the source audio and the recognized
+words were not published as CI artifacts.
+
+## In-CI real-media private listening pack probe
+
+The updated workflow additionally prepares a one-time private review pack
+from the same source-bound ASR result, checks every exported WAV with a PCM
+parser (16-kHz, mono, signed 16-bit) and validates each WAV duration against
+its intended interval. It checks pending human annotations against the
+recognition source SHA256 and confirms that no transcript has been manually
+verified and no WER is computed. The pack is disposed of before CI exits;
+it is never uploaded. Only the boolean and count fields appear in public
+performance evidence. Passing this technical probe does NOT mean any
+human has listened to the words or audited their accuracy.
