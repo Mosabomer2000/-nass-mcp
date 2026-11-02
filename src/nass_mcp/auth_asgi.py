@@ -1,13 +1,15 @@
-"""Dependency-light bearer authentication for Nass's ASGI worker.
+"""Strict bearer boundary for the public Nass Render worker.
 
-Authentication is enforced at the worker, not just at the Netlify gateway. The
-MCP SDK app's own lifespan is delegated unchanged (important for MCP v2).
+The worker is directly internet-reachable, so gateway limits must also apply.
+The ASGI lifespan fails closed without a configured backend token.
 """
 from __future__ import annotations
 
 import hmac
 import os
 from typing import Any
+
+MAX_MCP_REQUEST_BYTES = 256 * 1024
 
 
 class ProtectedASGI:
@@ -16,28 +18,95 @@ class ProtectedASGI:
         self.secret_env = secret_env
 
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
+        kind = scope.get("type")
+        if kind == "lifespan":
+            # Uvicorn's direct Docker entrypoint bypasses remote.main().
+            # Do not mark an unconfigured worker ready to accept requests.
+            first = await receive()
+            if first.get("type") == "lifespan.startup" and not os.environ.get(self.secret_env):
+                await send({"type": "lifespan.startup.failed",
+                            "message": "NASS_BACKEND_TOKEN is required"})
+                return
+            initial = [first]
+
+            async def replay_receive() -> dict:
+                if initial:
+                    return initial.pop(0)
+                return await receive()
+
+            await self.app(scope, replay_receive, send)
             return
-        # Public Render readiness probe: constant answer, no secrets or model load.
-        if scope.get("path", "").rstrip("/") == "/healthz" and scope.get("method") in ("GET", "HEAD"):
-            await self._reply(send, 200, b"ok" if scope.get("method") == "GET" else b"")
+        if kind == "websocket":
+            await send({"type": "websocket.close", "code": 1008})
             return
-        # Do not surface any other web routes exposed by the SDK in the future.
-        if scope.get("path", "").rstrip("/") != "/mcp":
+        if kind != "http":
+            return
+
+        path = scope.get("path", "").rstrip("/")
+        method = scope.get("method", "")
+        if path == "/healthz" and method in ("GET", "HEAD"):
+            await self._reply(send, 200, b"ok" if method == "GET" else b"")
+            return
+        if path != "/mcp":
             await self._reply(send, 404, b"Not found")
             return
-        if scope.get("method") != "POST":
+        if method != "POST":
             await self._reply(send, 405, b"Method not allowed")
             return
+
+        headers = scope.get("headers", [])
+        authorizations = [v for k, v in headers if k.lower() == b"authorization"]
         expected = os.environ.get(self.secret_env, "")
-        authorization = next((v.decode("latin1") for k, v in scope.get("headers", [])
-                              if k.lower() == b"authorization"), "")
-        token = authorization[7:] if authorization.lower().startswith("bearer ") else ""
+        token = ""
+        if len(authorizations) == 1:
+            authorization = authorizations[0].decode("latin1")
+            token = authorization[7:] if authorization.lower().startswith("bearer ") else ""
         if not expected or not token or not hmac.compare_digest(token, expected):
             await self._reply(send, 401, b"Unauthorized")
             return
-        await self.app(scope, receive, send)
+
+        lengths = [v for k, v in headers if k.lower() == b"content-length"]
+        if len(lengths) > 1:
+            await self._reply(send, 400, b"Invalid content length")
+            return
+        if lengths:
+            try:
+                length = int(lengths[0])
+                if length < 0:
+                    raise ValueError()
+            except ValueError:
+                await self._reply(send, 400, b"Invalid content length")
+                return
+            if length > MAX_MCP_REQUEST_BYTES:
+                await self._reply(send, 413, b"Request too large")
+                return
+
+        parts = []
+        total = 0
+        while True:
+            event = await receive()
+            if event.get("type") != "http.request":
+                return  # Client disconnected; no partial RPC gets dispatched.
+            chunk = event.get("body", b"")
+            total += len(chunk)
+            if total > MAX_MCP_REQUEST_BYTES:
+                await self._reply(send, 413, b"Request too large")
+                return
+            parts.append(chunk)
+            if not event.get("more_body", False):
+                break
+
+        payload = b"".join(parts)
+        replayed = False
+
+        async def replay_body() -> dict:
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": payload, "more_body": False}
+            return await receive()
+
+        await self.app(scope, replay_body, send)
 
     @staticmethod
     async def _reply(send: Any, status: int, message: bytes) -> None:
