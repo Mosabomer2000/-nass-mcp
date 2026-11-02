@@ -13,8 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      NASS_MEDIA_DIR: ${{ runner.temp }}/nass-asr-input
-      NASS_DATA_DIR: ${{ runner.temp }}/nass-asr-data
+      NASS_MEDIA_DIR: ${{ github.workspace }}/nass-asr-input
+      NASS_DATA_DIR: ${{ github.workspace }}/nass-asr-data
       NASS_WHISPER_MODEL: tiny.en
       NASS_DEVICE: cpu
       NASS_COMPUTE_TYPE: int8
