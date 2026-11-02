@@ -41,6 +41,11 @@ small {opacity:.78}
 المراجعة البشرية الذاتية لا تعني تحققًا مستقلًا من دقتها.
 </aside>
 <div id="progress" role="status"></div>
+<section id="resume">
+<label for="import-file">استئناف المراجعة من ملف JSONL محفوظ:</label>
+<input id="import-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson,text/plain">
+<p id="import-status" role="status" aria-live="polite"></p>
+</section>
 <main id="items"></main>
 <button id="export" type="button">تصدير ملف المراجعة JSONL</button>
 <p><small>هذا الملف مخصص للمراجعة المحلية. لا تنشر التسجيلات أو ملف التصحيحات دون إذن.</small></p>
@@ -50,12 +55,16 @@ small {opacity:.78}
 const supplied = JSON.parse(document.getElementById("review-data").textContent);
 const rows = supplied.rows;
 const edits = rows.map(() => ({text: "", checked: false}));
+const inputs = [];
+const checkboxes = [];
+let dirty = false;
 const container = document.getElementById("items");
 const progress = document.getElementById("progress");
 
 function updateProgress() {
   const ready = edits.filter(r => r.checked && r.text.trim().length > 0).length;
-  progress.textContent = "المقاطع المراجعة: " + ready + " / " + rows.length;
+  progress.textContent = "المقاطع المراجعة: " + ready + " / " + rows.length +
+      (dirty ? " — لديك تغييرات لم تُصدّر" : "");
 }
 rows.forEach((r, i) => {
   const article = document.createElement("article");
@@ -83,23 +92,101 @@ rows.forEach((r, i) => {
   input.setAttribute("aria-label", "تصحيح المقطع " + (i + 1));
   input.addEventListener("input", () => {
     edits[i].text = input.value;
+    dirty = true;
     updateProgress();
   });
   label.appendChild(input);
+  inputs.push(input);
   article.appendChild(label);
   const verify = document.createElement("label");
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
   checkbox.addEventListener("change", () => {
     edits[i].checked = checkbox.checked;
+    dirty = true;
     updateProgress();
   });
   verify.appendChild(checkbox);
+  checkboxes.push(checkbox);
   verify.appendChild(document.createTextNode(" أُقِرّ بأنني استمعت إلى هذا المقطع وراجعت نصه"));
   article.appendChild(verify);
   container.appendChild(article);
 });
 updateProgress();
+
+function readSavedReview(content) {
+  if (typeof content !== "string" || content.length > 5_000_000) {
+    throw new Error("ملف المراجعة كبير جدًا");
+  }
+  const lines = content.split(/\\r?\\n/).filter(line => line.trim().length);
+  if (lines.length !== rows.length) {
+    throw new Error("عدد مقاطع المراجعة لا يطابق الجلسة الحالية");
+  }
+  const expected = new Map(rows.map(row => [row.id, row]));
+  if (expected.size !== rows.length) {
+    throw new Error("معرّفات جلسة المراجعة غير فريدة");
+  }
+  const restored = new Map();
+  for (const line of lines) {
+    const item = JSON.parse(line);
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error("صف مراجعة غير صالح");
+    }
+    const original = expected.get(item.id);
+    if (!original || restored.has(item.id) ||
+        item.audio_sha256 !== supplied.audio_sha256 ||
+        item.kind !== original.kind ||
+        typeof item.start_seconds !== "number" ||
+        typeof item.end_seconds !== "number" ||
+        !Number.isFinite(item.start_seconds) || !Number.isFinite(item.end_seconds) ||
+        Math.abs(item.start_seconds - original.start_seconds) > 0.0001 ||
+        Math.abs(item.end_seconds - original.end_seconds) > 0.0001) {
+      throw new Error("ملف التصحيح يخص تسجيلًا أو مجموعة مقاطع مختلفة");
+    }
+    if (typeof item.reference_text !== "string" ||
+        item.reference_text.length > 20000 ||
+        typeof item.reviewer_attestation !== "boolean" ||
+        !["human_checked", "pending"].includes(item.review_state) ||
+        (item.review_state === "human_checked") !== item.reviewer_attestation ||
+        (item.reviewer_attestation && !item.reference_text.trim())) {
+      throw new Error("حالة مراجعة غير صالحة في الملف");
+    }
+    restored.set(item.id, item);
+  }
+  return rows.map(row => restored.get(row.id));
+}
+
+// Re-import is explicit, local-only and atomic: no edits change if validation fails.
+document.getElementById("import-file").addEventListener("change", async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const status = document.getElementById("import-status");
+  try {
+    if (file.size > 5_000_000) throw new Error("ملف المراجعة كبير جدًا");
+    const saved = readSavedReview(await file.text());
+    if (dirty && !window.confirm("ستحل البيانات المستوردة محل التعديلات الحالية. متابعة؟")) {
+      status.textContent = "أُلغي الاستيراد، وحُفظت التعديلات الحالية داخل الصفحة فقط";
+      return;
+    }
+    saved.forEach((item, index) => {
+      edits[index].text = item.reference_text;
+      edits[index].checked = item.reviewer_attestation;
+      inputs[index].value = item.reference_text;
+      checkboxes[index].checked = item.reviewer_attestation;
+    });
+    dirty = false;
+    updateProgress();
+    status.textContent = "استُعيدت " + saved.length + " مراجعة من الملف المحلي";
+  } catch (error) {
+    status.textContent = "لم يُستورد الملف: " + (error instanceof SyntaxError ?
+        "صيغة JSONL غير صالحة" : error.message);
+  } finally {
+    event.target.value = "";
+  }
+});
+window.addEventListener("beforeunload", event => {
+  if (dirty) { event.preventDefault(); event.returnValue = ""; }
+});
 
 document.getElementById("export").addEventListener("click", () => {
   const lines = rows.map((r, i) => {
@@ -122,6 +209,10 @@ document.getElementById("export").addEventListener("click", () => {
   document.body.appendChild(link);
   link.click();
   link.remove();
+  dirty = false;
+  updateProgress();
+  document.getElementById("import-status").textContent =
+      "بدأ تنزيل النسخة؛ تأكد من حفظ ملف JSONL قبل مغادرة الصفحة";
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 });
 </script>
