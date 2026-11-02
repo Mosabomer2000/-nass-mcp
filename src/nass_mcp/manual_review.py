@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import random
 from pathlib import Path
 
 from .benchmark import score, aggregate
@@ -46,7 +47,8 @@ def validate_result(result: dict) -> tuple[list[dict], float]:
 
 
 def review_template(result: dict, audio_sha256: str,
-                    context_seconds: float = 8.0, limit: int = 40) -> list[dict]:
+                    context_seconds: float = 8.0, limit: int = 40,
+                    control_intervals: int = 0) -> list[dict]:
     """Prepare a LOCAL, unreviewed annotation form for actual seam intervals."""
     segments, duration = validate_result(result)
     if not isinstance(audio_sha256, str) or len(audio_sha256) != 64:
@@ -55,6 +57,8 @@ def review_template(result: dict, audio_sha256: str,
         raise ValueError("Invalid review count")
     if not math.isfinite(context_seconds) or not 1 <= context_seconds <= 30:
         raise ValueError("Invalid context")
+    if type(control_intervals) is not int or not 0 <= control_intervals <= 40:
+        raise ValueError("control_intervals must be 0..40")
     settings = result.get("recognition") or {}
     chunk = settings.get("configured_chunk_seconds")
     overlap = settings.get("configured_overlap_seconds")
@@ -81,6 +85,36 @@ def review_template(result: dict, audio_sha256: str,
             "review_state": "pending",
             "reviewer_attestation": False,
             "note": "Listen to the actual audio, fill in precise words and mark human_checked.",
+        })
+    # Choose deterministic *non-seam* controls to compare accuracy at
+    # ordinary places vs at decoder boundaries. These are review invitations,
+    # not human attestations or ground truth.
+    rng = random.Random(int(hashlib.sha256(audio_sha256.encode("ascii")).hexdigest(), 16))
+    attempts = 0
+    while sum(row["kind"] == "interior_control" for row in rows) < control_intervals and attempts < 400:
+        attempts += 1
+        center = rng.uniform(context_seconds, duration-context_seconds) if duration > 2*context_seconds else duration/2
+        start = max(0.0, center-context_seconds)
+        end = min(duration, center+context_seconds)
+        if any(abs(center-t) < 2*context_seconds+2 for t in raw_seams):
+            continue
+        touching = [seg for seg in segments
+                    if float(seg["end"]) >= start and float(seg["start"]) <= end]
+        if not touching:
+            continue
+        start = max(0.0, min(start, *(float(seg["start"]) for seg in touching)))
+        end = min(duration, max(end, *(float(seg["end"]) for seg in touching)))
+        # Samples must be disjoint after expanding to full machine segments.
+        if any(start < row["end_seconds"]-0.001 and end > row["start_seconds"]+0.001
+               for row in rows):
+            continue
+        number = sum(row["kind"] == "interior_control" for row in rows)
+        rows.append({
+            "id": f"control-{number:04d}", "kind": "interior_control",
+            "start_seconds": round(start, 3), "end_seconds": round(end, 3),
+            "audio_sha256": audio_sha256, "reference_text": "",
+            "review_state": "pending", "reviewer_attestation": False,
+            "note": "Listen and transcribe exactly; this is a non-seam baseline.",
         })
     return rows
 
