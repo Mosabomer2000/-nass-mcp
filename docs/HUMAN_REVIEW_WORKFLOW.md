@@ -36,3 +36,10 @@ must not be uploaded to public GitHub Actions artifacts.
 
 One can generate the review form independently of access to YouTube; the
 recording must be locally accessible and actually processed through audio-ASR.
+
+For less biased inspection, `template --controls 8` also proposes deterministic,
+non-overlapping **interior control intervals** away from decoder seams. The
+control positions are derived from the audio digest, not from model accuracy.
+If the recording is too short or seam intervals dominate, fewer controls may
+be available. Compare seam and interior excerpt WER separately; do not infer
+full-recording accuracy from either sample alone.

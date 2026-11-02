@@ -37,13 +37,14 @@ def main() -> None:
         s.add_argument("--output", type=Path, required=True)
         if name == "template":
             s.add_argument("--context", type=float, default=8)
+            s.add_argument("--controls", type=int, default=8, help="Deterministic non-seam intervals")
         else:
             s.add_argument("--manifest", type=Path, required=True)
     args = parser.parse_args()
     data = read_result(args.result)
     digest = file_digest(args.audio)
     if args.command == "template":
-        rows = review_template(data, digest, args.context)
+        rows = review_template(data, digest, args.context, control_intervals=args.controls)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open("w", encoding="utf-8") as f:
             for row in rows:

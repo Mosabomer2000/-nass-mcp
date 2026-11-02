@@ -79,3 +79,28 @@ def test_actual_file_sha256(tmp_path):
     media = tmp_path / "arabic.wav"
     media.write_bytes(b"Test bytes, not actually a source recording")
     assert len(file_digest(media)) == 64
+
+
+def test_deterministic_interior_controls_do_not_overlap_seams():
+    value = result()
+    value["recognition"]["duration_seconds"] = 240
+    value["recognition"]["configured_chunk_seconds"] = 90
+    value["segments"] = [
+        {"start": i*8, "end": i*8+5, "text": "هذا اختبار"}
+        for i in range(29)
+    ]
+    rows = review_template(value, DIGEST, context_seconds=4, control_intervals=3)
+    controls = [row for row in rows if row["kind"] == "interior_control"]
+    assert len(controls) == 3
+    assert rows == review_template(value, DIGEST, context_seconds=4, control_intervals=3)
+    assert all(row["review_state"] == "pending" for row in controls)
+    for i, left in enumerate(rows):
+        for right in rows[i+1:]:
+            if left["kind"] == "interior_control" or right["kind"] == "interior_control":
+                assert left["end_seconds"] <= right["start_seconds"] + 0.001 or right["end_seconds"] <= left["start_seconds"] + 0.001
+
+
+@pytest.mark.parametrize("bad", [-1, True, 41])
+def test_invalid_control_counts_fail_closed(bad):
+    with pytest.raises(ValueError):
+        review_template(result(), DIGEST, control_intervals=bad)
