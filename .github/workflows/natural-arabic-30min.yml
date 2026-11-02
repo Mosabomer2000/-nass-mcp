@@ -5,6 +5,8 @@ on:
     paths:
       - 'scripts/fetch_commons_conversation.py'
       - 'scripts/natural_arabic_acceptance.py'
+      - 'scripts/probe_private_audit_pack.py'
+      - 'scripts/prepare_human_audit.py'
       - '.github/workflows/natural-arabic-30min.yml'
   workflow_dispatch:
 permissions:
@@ -37,7 +39,7 @@ jobs:
       - name: Download and SHA-1 verify the CC BY-SA Wikimedia source
         run: python scripts/fetch_commons_conversation.py
       - name: Detect spoken Arabic, transcribe natural 30-min recording, review seams
-        run: python scripts/natural_arabic_acceptance.py
+        run: python -m scripts.natural_arabic_acceptance
       - name: Upload only redacted performance evidence
         if: always()
         uses: actions/upload-artifact@v4
